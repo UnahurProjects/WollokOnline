@@ -1,0 +1,214 @@
+import type { CommitResult, RepoInfo, WorkspaceFile } from "./types";
+
+/**
+ * GitHubService — única superficie para operar repos en GitHub.
+ *
+ * GitHub es la ÚNICA fuente de verdad del examen (no hay base de datos):
+ * - estado abierto  = el repo existe y NO está archivado;
+ * - estado cerrado  = el repo está archivado (solo lectura).
+ *
+ * En Fase 1 hay una implementación MOCK en memoria (sin red) detrás del flag
+ * GITHUB_INTEGRATION_MODE=mock. La implementación real con GitHub App (octokit)
+ * es WOLL-027 y requiere credenciales.
+ *
+ * Todas estas operaciones corren SOLO en el servidor (Route Handlers). El token
+ * de GitHub nunca llega al browser; el alumno no es colaborador.
+ */
+export interface RepoRef {
+  org: string;
+  repoName: string;
+}
+
+export interface GenerateOptions {
+  org: string;
+  templateRepo: string;
+  repoName: string;
+  description?: string;
+}
+
+export interface CommitOptions {
+  org: string;
+  repoName: string;
+  files: WorkspaceFile[];
+  message: string;
+}
+
+export interface GitHubService {
+  /** Crea un repo privado a partir del template (generate-from-template). Idempotente. */
+  generateFromTemplate(opts: GenerateOptions): Promise<RepoInfo>;
+  getRepo(ref: RepoRef): Promise<RepoInfo | null>;
+  readWorkspace(ref: RepoRef): Promise<WorkspaceFile[]>;
+  commitFiles(opts: CommitOptions): Promise<CommitResult>;
+  getLastCommit(ref: RepoRef): Promise<CommitResult | null>;
+  /** Cierra el examen: archiva el repo (solo lectura). */
+  archiveRepo(ref: RepoRef): Promise<void>;
+  /** Lista repos de la org cuyo nombre empieza con el prefijo (ej. "parcial2-"). */
+  listRepos(opts: { org: string; prefix: string }): Promise<RepoInfo[]>;
+  /** Path de la imagen de enunciado en el repo (o null si no hay). */
+  findStatementPath(ref: RepoRef): Promise<string | null>;
+  /** Bytes de la imagen de enunciado (o null si no hay). */
+  getStatementImage(
+    ref: RepoRef,
+  ): Promise<{ data: Uint8Array; contentType: string } | null>;
+}
+
+/** Extensiones de imagen soportadas para el enunciado → content-type. */
+export const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+};
+
+/** Elige la imagen de enunciado entre los paths (prioriza statement/enunciado/readme). */
+export function pickStatementPath(paths: string[]): string | null {
+  const imgs = paths.filter((p) => {
+    const ext = p.split(".").pop()?.toLowerCase() ?? "";
+    return IMAGE_CONTENT_TYPES[ext];
+  });
+  if (imgs.length === 0) return null;
+  return imgs.find((p) => /statement|enunciado|readme/i.test(p)) ?? imgs[0];
+}
+
+// ── Mock en memoria ─────────────────────────────────────────────────────────
+
+/** Contenido del template (mock). El template real vive en GitHub (WOLL-027). */
+const TEMPLATE_FILES: WorkspaceFile[] = [
+  {
+    path: "pepita.wlk",
+    content:
+      "object pepita {\n  var energia = 100\n\n  method energia() = energia\n\n  method comer(gramos) {\n    energia = energia + gramos\n  }\n\n  method volar(minutos) {\n    energia = energia - (minutos * 3)\n  }\n}\n",
+  },
+  {
+    path: "pepitaTest.wtest",
+    content:
+      'import pepita.*\n\ntest "comer aumenta la energia" {\n  pepita.comer(50)\n  assert.equals(150, pepita.energia())\n}\n\ntest "volar disminuye la energia" {\n  pepita.volar(10)\n  assert.equals(70, pepita.energia())\n}\n',
+  },
+  {
+    path: ".exam/config.json",
+    content: JSON.stringify({ autoCommitIntervalMinutes: 5 }, null, 2) + "\n",
+  },
+];
+
+interface MockRepo {
+  name: string;
+  org: string;
+  archived: boolean;
+  files: Map<string, string>;
+  lastCommit: CommitResult | null;
+}
+
+function fakeSha(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(16).padStart(7, "0").slice(0, 7);
+}
+
+/**
+ * Mock en memoria (persiste por proceso). Suficiente para desarrollo y demo.
+ * En producción lo reemplaza la GitHub App real (WOLL-027).
+ */
+export class MockGitHubService implements GitHubService {
+  private repos = new Map<string, MockRepo>();
+
+  private key(org: string, repoName: string) {
+    return `${org}/${repoName}`;
+  }
+
+  private toInfo(r: MockRepo): RepoInfo {
+    return {
+      name: r.name,
+      url: `https://github.com/${r.org}/${r.name}`,
+      archived: r.archived,
+    };
+  }
+
+  async generateFromTemplate(opts: GenerateOptions): Promise<RepoInfo> {
+    const key = this.key(opts.org, opts.repoName);
+    const existing = this.repos.get(key);
+    if (existing) return this.toInfo(existing);
+
+    const repo: MockRepo = {
+      name: opts.repoName,
+      org: opts.org,
+      archived: false,
+      files: new Map(TEMPLATE_FILES.map((f) => [f.path, f.content])),
+      lastCommit: null,
+    };
+    this.repos.set(key, repo);
+    return this.toInfo(repo);
+  }
+
+  async getRepo(ref: RepoRef): Promise<RepoInfo | null> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    return r ? this.toInfo(r) : null;
+  }
+
+  async readWorkspace(ref: RepoRef): Promise<WorkspaceFile[]> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    if (!r) return [];
+    return [...r.files.entries()].map(([path, content]) => ({ path, content }));
+  }
+
+  async commitFiles(opts: CommitOptions): Promise<CommitResult> {
+    const r = this.repos.get(this.key(opts.org, opts.repoName));
+    if (!r) throw new Error(`Repo no encontrado: ${opts.repoName}`);
+    if (r.archived) throw new Error("El repo está archivado (examen cerrado).");
+    for (const f of opts.files) r.files.set(f.path, f.content);
+
+    const now = new Date();
+    const sha = fakeSha(this.key(opts.org, opts.repoName) + opts.message + now.toISOString());
+    r.lastCommit = {
+      sha,
+      committedAt: now.toISOString(),
+      htmlUrl: `https://github.com/${opts.org}/${opts.repoName}/commit/${sha}`,
+      message: opts.message,
+    };
+    return r.lastCommit;
+  }
+
+  async getLastCommit(ref: RepoRef): Promise<CommitResult | null> {
+    return this.repos.get(this.key(ref.org, ref.repoName))?.lastCommit ?? null;
+  }
+
+  async archiveRepo(ref: RepoRef): Promise<void> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    if (r) r.archived = true;
+  }
+
+  async listRepos(opts: { org: string; prefix: string }): Promise<RepoInfo[]> {
+    return [...this.repos.values()]
+      .filter((r) => r.org === opts.org && r.name.startsWith(opts.prefix))
+      .map((r) => this.toInfo(r));
+  }
+
+  async findStatementPath(ref: RepoRef): Promise<string | null> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    return r ? pickStatementPath([...r.files.keys()]) : null;
+  }
+
+  async getStatementImage(): Promise<{ data: Uint8Array; contentType: string } | null> {
+    // El template mock no trae imagen.
+    return null;
+  }
+}
+
+// ── Factory ─────────────────────────────────────────────────────────────────
+
+let cached: GitHubService | null = null;
+
+export async function getGitHubService(): Promise<GitHubService> {
+  if (cached) return cached;
+
+  const mode = process.env.GITHUB_INTEGRATION_MODE ?? "mock";
+  if (mode === "app") {
+    // Import dinámico para no bundlear octokit cuando se usa el mock.
+    const { AppGitHubService } = await import("./github-app.service");
+    cached = new AppGitHubService();
+  } else {
+    cached = new MockGitHubService();
+  }
+  return cached;
+}

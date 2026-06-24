@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tema oscuro (default) y claro, vía clase .dark en <html>. */
+:root {
+  --bg: #ffffff;
+  --fg: #1b1f24;
+  --surface: #f3f4f6;
+  --surface-2: #e5e7eb;
+  --border: #d6d9de;
+}
+
+.dark {
+  --bg: #0b0d12;
+  --fg: #e6e8ee;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.12);
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Clases semánticas para que el tema funcione sin reescribir todo. */
+.surface {
+  background: var(--surface);
+}
+.surface-2 {
+  background: var(--surface-2);
+}
+.bd {
+  border-color: var(--border);
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.hoverable:hover {
+  background: var(--surface-2);
+}
+.btn-primary {
+  background: var(--fg);
+  color: var(--bg);
+}
+.field {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+
+/* Utilidad para zonas anti-copia (editor de examen y enunciado). */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
