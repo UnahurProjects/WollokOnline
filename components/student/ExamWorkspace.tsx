@@ -70,7 +70,6 @@ export function ExamWorkspace({
   const [remote, setRemote] = useState<WorkspaceResponse | null>(null);
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [lastLocalSaveAt, setLastLocalSaveAt] = useState<string | null>(null);
   const [lastCommitAt, setLastCommitAt] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   const [commitMsg, setCommitMsg] = useState<string | null>(null);
@@ -125,7 +124,6 @@ export function ExamWorkspace({
         lastLocalSaveAt: now,
         lastCommitAt,
       });
-      setLastLocalSaveAt(now);
     },
     [localKey, lastCommitAt],
   );
@@ -257,15 +255,22 @@ export function ExamWorkspace({
               ts: new Date().toISOString(),
             },
           ]);
-          setCommitMsg("Sincronizado ✓");
+          setCommitMsg("Cambios subidos ✓");
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Error al sincronizar";
-        if (/cerrad/i.test(msg)) {
-          setClosed(true);
-          closedRef.current = true;
+        // Sin conexión (fetch falla) vs error del servidor (examen cerrado, etc.).
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          setCommitMsg("⚠ Sin conexión — tus cambios quedaron guardados; reintentá cuando vuelva internet.");
+        } else if (e instanceof TypeError) {
+          setCommitMsg("⚠ No se pudo conectar — reintentá en un momento.");
+        } else {
+          const msg = e instanceof Error ? e.message : "No se pudieron subir los cambios.";
+          if (/cerrad/i.test(msg)) {
+            setClosed(true);
+            closedRef.current = true;
+          }
+          setCommitMsg(msg);
         }
-        setCommitMsg(msg);
       } finally {
         setCommitting(false);
       }
@@ -491,8 +496,7 @@ export function ExamWorkspace({
         <div>
           <h1 className="text-lg font-semibold">{remote?.examName}</h1>
           <p className="text-sm opacity-70">
-            Último commit: {formatStampShort(lastCommitAt)} · Guardado:{" "}
-            {formatStampShort(lastLocalSaveAt)} · Auto-commit cada{" "}
+            Último commit: {formatStampShort(lastCommitAt)} · Auto-commit cada{" "}
             {remote?.autoCommitIntervalMinutes} min
           </p>
         </div>
@@ -500,16 +504,46 @@ export function ExamWorkspace({
           {commitMsg && <span className="text-sm opacity-70">{commitMsg}</span>}
           <button
             onClick={() => setShowFiles((v) => !v)}
-            className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable"
+            title={showFiles ? "Ocultar archivos" : "Mostrar archivos"}
+            aria-label="Panel de archivos"
+            className="rounded-md border bd p-1.5 transition hoverable"
           >
-            {showFiles ? "Ocultar archivos" : "Ver archivos"}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            >
+              <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+              <line x1="6" y1="2.5" x2="6" y2="13.5" />
+              {showFiles && (
+                <rect x="2" y="3" width="3.5" height="10" fill="currentColor" stroke="none" opacity="0.55" />
+              )}
+            </svg>
           </button>
           {remote?.statementImageUrl && (
             <button
               onClick={() => setShowStatement((v) => !v)}
-              className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable"
+              title={showStatement ? "Ocultar enunciado" : "Mostrar enunciado"}
+              aria-label="Panel del enunciado"
+              className="rounded-md border bd p-1.5 transition hoverable"
             >
-              {showStatement ? "Ocultar enunciado" : "Ver enunciado"}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              >
+                <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+                <line x1="10" y1="2.5" x2="10" y2="13.5" />
+                {showStatement && (
+                  <rect x="10.5" y="3" width="3.5" height="10" fill="currentColor" stroke="none" opacity="0.55" />
+                )}
+              </svg>
             </button>
           )}
           <ThemeToggle />
@@ -528,7 +562,7 @@ export function ExamWorkspace({
                 disabled={committing}
                 className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable disabled:opacity-40"
               >
-                {committing ? "Guardando…" : "Guardar / Commit & Push"}
+                {committing ? "Subiendo…" : "Subir cambios"}
               </button>
               <button
                 onClick={() => {
