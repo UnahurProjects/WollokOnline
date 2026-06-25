@@ -343,7 +343,10 @@ export function ExamWorkspace({
   const active = files.find((f) => f.path === activePath) ?? null;
 
   return (
-    <div className="flex h-screen flex-col">
+    <div
+      className="flex h-screen flex-col"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {phase === "recovery" && recovery && (
         <RecoveryDialog
           localSavedAt={recovery.localSavedAt}
