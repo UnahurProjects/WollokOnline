@@ -31,6 +31,14 @@ type Phase = "loading" | "recovery" | "ready" | "error";
 
 const SAVE_DEBOUNCE_MS = 800;
 
+/** SHA-256 en hex (para validar el código de export offline contra el hash embebido). */
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 /** Dispara la descarga de un Blob con un nombre dado. */
 function downloadBlob(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -359,16 +367,35 @@ export function ExamWorkspace({
     setExporting(true);
     setExportError(null);
     try {
-      const res = await fetch("/api/export-auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: exportCode }),
-      });
-      if (!res.ok) {
-        setExportError("Código incorrecto.");
+      // Autorización: server si hay internet (la clave nunca va al cliente);
+      // si no hay conexión, fallback contra el hash embebido (offline).
+      let authorized = false;
+      try {
+        const res = await fetch("/api/export-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: exportCode }),
+        });
+        if (res.ok) authorized = true;
+        else {
+          setExportError("Código incorrecto.");
+          setExporting(false);
+          return;
+        }
+      } catch {
+        const expected = process.env.NEXT_PUBLIC_EXPORT_CODE_HASH;
+        authorized = !!expected && (await sha256Hex(exportCode)) === expected;
+        if (!authorized) {
+          setExportError("Código incorrecto.");
+          setExporting(false);
+          return;
+        }
+      }
+      if (!authorized) {
         setExporting(false);
         return;
       }
+
       const wlk = filesRef.current.filter((f) => /\.(wlk|wtest)$/i.test(f.path));
       try {
         // Zip generado en el navegador (no depende de que la máquina tenga zip).
