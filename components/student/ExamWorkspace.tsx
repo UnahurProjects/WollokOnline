@@ -31,6 +31,18 @@ type Phase = "loading" | "recovery" | "ready" | "error";
 
 const SAVE_DEBOUNCE_MS = 800;
 
+/** Dispara la descarga de un Blob con un nombre dado. */
+function downloadBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** ¿Tienen el mismo contenido (mismos paths y mismo texto)? */
 function filesEqual(a: LocalFile[], b: LocalFile[]): boolean {
   if (a.length !== b.length) return false;
@@ -358,18 +370,21 @@ export function ExamWorkspace({
         return;
       }
       const wlk = filesRef.current.filter((f) => /\.(wlk|wtest)$/i.test(f.path));
-      const JSZip = (await import("jszip")).default;
-      const zip = new JSZip();
-      for (const f of wlk) zip.file(f.path, f.content);
-      const blob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${examName}-${username}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      try {
+        // Zip generado en el navegador (no depende de que la máquina tenga zip).
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
+        for (const f of wlk) zip.file(f.path, f.content);
+        const blob = await zip.generateAsync({ type: "blob" });
+        downloadBlob(`${examName}-${username}.zip`, blob);
+      } catch {
+        // Fallback: descargar cada archivo por separado (son pocos).
+        for (const f of wlk) {
+          const name = f.path.split("/").pop() ?? f.path;
+          downloadBlob(name, new Blob([f.content], { type: "text/plain" }));
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
       setShowExport(false);
       setExportCode("");
     } catch {
