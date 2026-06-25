@@ -5,7 +5,7 @@ import type { ActivityEventType } from "@/lib/types/db";
  *
  * Registra la actividad del alumno (ediciones, intentos de copia/pegado, foco,
  * etc.) en memoria/IndexedDB y la serializa a .exam/activity.ndjson, que viaja
- * dentro de cada commit. NO se envía a Supabase: el import y análisis es Fase 2
+ * dentro de cada commit. NO se envía a ningún servidor: el import y análisis es Fase 2
  * (con unique(enrollment_id, event_id) para idempotencia).
  *
  * Módulo puro (sin dependencias de servidor) para poder usarse en el cliente.

@@ -87,5 +87,5 @@ export function sanitizeEditablePaths(input: string | string[]): string[] {
   return out;
 }
 
-// TODO(WOLL-012/013/014): clase ExamService con persistencia Supabase +
-// GitHubIntegrationService (crear examen, iniciar, cerrar, validar accesos).
+// La orquestación del examen (crear/iniciar/cerrar) está en exam.server.ts,
+// GitHub-only (sin base de datos).

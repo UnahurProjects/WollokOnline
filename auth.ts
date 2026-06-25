@@ -5,7 +5,7 @@ import { resolveRole } from "@/lib/auth/roles";
 /**
  * Auth.js (NextAuth v5) — login con GitHub OAuth, SOLO para identidad.
  *
- * Estrategia JWT (sin adapter): la sesión no depende de Supabase. Se persisten
+ * Estrategia JWT (sin adapter): la sesión no depende de ninguna base de datos. Se persisten
  * github_id y github_username en el token y se exponen en la sesión junto al
  * rol resuelto por configuración (TEACHERS).
  */
