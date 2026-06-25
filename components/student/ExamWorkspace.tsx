@@ -72,6 +72,7 @@ export function ExamWorkspace({
   const filesRef = useRef<LocalFile[]>([]);
   const submittedRef = useRef(false);
   const closedRef = useRef(false);
+  const openCommitRef = useRef(false);
   const autoCommitRef = useRef<() => void>(() => {});
   filesRef.current = files;
   submittedRef.current = submitted;
@@ -256,6 +257,15 @@ export function ExamWorkspace({
     const id = setInterval(() => autoCommitRef.current(), minutes * 60_000);
     return () => clearInterval(id);
   }, [phase, submitted, remote]);
+
+  // Commit inicial al abrir → marca "presente" en el dashboard (hora + IP) apenas
+  // el alumno entra, sin esperar al primer auto-commit.
+  useEffect(() => {
+    if (phase !== "ready" || submitted || closed) return;
+    if (openCommitRef.current) return;
+    openCommitRef.current = true;
+    void runCommit("autosave", "/api/commit");
+  }, [phase, submitted, closed, runCommit]);
 
   // Detecta si el docente cerró el examen (repo archivado) y bloquea la UI.
   useEffect(() => {
