@@ -61,19 +61,8 @@ export async function getStudentWorkspace(
   const control = await getExamControl(slug);
   const all = await github.readWorkspace({ org, repoName: name });
 
-  // Config (intervalo) desde .exam/config.json; el alumno no lo ve.
-  let interval = 5;
-  const configFile = all.find((f) => f.path === ".exam/config.json");
-  if (configFile) {
-    try {
-      const parsed = JSON.parse(configFile.content);
-      if (typeof parsed.autoCommitIntervalMinutes === "number") {
-        interval = parsed.autoCommitIntervalMinutes;
-      }
-    } catch {
-      // config inválido → default.
-    }
-  }
+  // Intervalo de auto-commit: del control central (_control), no por repo.
+  const interval = control.intervalMinutes;
 
   const last = await github.getLastCommit({ org, repoName: name });
   const statementPath = await github.findStatementPath({ org, repoName: name });

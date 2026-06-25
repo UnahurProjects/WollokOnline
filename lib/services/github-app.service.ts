@@ -19,7 +19,6 @@ import type { CommitResult, RepoInfo, WorkspaceFile } from "./types";
  * y Contents (leer/escribir).
  */
 const WANTED = /\.(wlk|wtest)$/i;
-const CONFIG_PATH = ".exam/config.json";
 
 export class AppGitHubService implements GitHubService {
   private octokitPromise: Promise<any> | null = null;
@@ -107,7 +106,7 @@ export class AppGitHubService implements GitHubService {
     });
 
     const wanted = (tree.data.tree as any[]).filter(
-      (e) => e.type === "blob" && (WANTED.test(e.path) || e.path === CONFIG_PATH),
+      (e) => e.type === "blob" && WANTED.test(e.path),
     );
 
     const files: WorkspaceFile[] = [];

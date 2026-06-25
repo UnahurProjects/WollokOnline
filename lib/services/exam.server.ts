@@ -33,8 +33,10 @@ export interface StartExamResult {
 }
 
 /**
- * Inicia el examen: genera un repo privado por alumno desde el template, escribe
- * el intervalo en `.exam/config.json` de cada repo, e inicializa el control central.
+ * Inicia el examen: genera un repo privado por alumno desde el template e
+ * inicializa el control central (`_control/{slug}.json`) con el intervalo y la
+ * hora de fin. No se escribe nada dentro del repo del alumno: toda la config del
+ * examen vive en el control central (una sola escritura, sin race al crear).
  */
 export async function startExam(input: StartExamInput): Promise<StartExamResult> {
   const slug = sanitizeExamName(input.examName);
@@ -44,12 +46,6 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
 
   const org = getOrg();
   const github = await getGitHubService();
-  const config =
-    JSON.stringify(
-      { autoCommitIntervalMinutes: input.autoCommitIntervalMinutes },
-      null,
-      2,
-    ) + "\n";
 
   const created = [];
   for (const username of usernames) {
@@ -59,12 +55,6 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
       templateRepo: input.templateRepo,
       repoName: name,
       description: `Examen: ${slug}`,
-    });
-    await github.commitFiles({
-      org,
-      repoName: name,
-      files: [{ path: ".exam/config.json", content: config }],
-      message: "Configuración del examen",
     });
     created.push({ username, repoName: repo.name, repoUrl: repo.url });
   }
