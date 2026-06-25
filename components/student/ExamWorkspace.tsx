@@ -64,6 +64,10 @@ export function ExamWorkspace({
   const [showStatement, setShowStatement] = useState(true);
   const [showFiles, setShowFiles] = useState(true);
   const [statementWidth, setStatementWidth] = useState(480);
+  const [showExport, setShowExport] = useState(false);
+  const [exportCode, setExportCode] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const mainRef = useRef<HTMLDivElement | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -338,17 +342,19 @@ export function ExamWorkspace({
 
   // Exportación de emergencia (GitHub caído): descarga un .zip con los .wlk/.wtest
   // actuales (copia local), gateada por un código docente validado server-side.
-  async function emergencyExport() {
-    const code = window.prompt("Código:");
-    if (!code) return;
+  async function doExport(e: React.FormEvent) {
+    e.preventDefault();
+    setExporting(true);
+    setExportError(null);
     try {
       const res = await fetch("/api/export-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: exportCode }),
       });
       if (!res.ok) {
-        window.alert("Código incorrecto.");
+        setExportError("Código incorrecto.");
+        setExporting(false);
         return;
       }
       const wlk = filesRef.current.filter((f) => /\.(wlk|wtest)$/i.test(f.path));
@@ -364,8 +370,12 @@ export function ExamWorkspace({
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setShowExport(false);
+      setExportCode("");
     } catch {
-      window.alert("No se pudo exportar.");
+      setExportError("No se pudo exportar.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -390,6 +400,42 @@ export function ExamWorkspace({
       className="flex h-screen flex-col"
       onContextMenu={(e) => e.preventDefault()}
     >
+      {showExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6">
+          <form onSubmit={doExport} className="card w-full max-w-xs rounded-lg p-5">
+            <input
+              type="password"
+              autoFocus
+              value={exportCode}
+              onChange={(e) => setExportCode(e.target.value)}
+              placeholder="Código"
+              className="field w-full rounded-md px-3 py-2 text-sm outline-none"
+            />
+            {exportError && <p className="mt-2 text-sm text-red-400">{exportError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExport(false);
+                  setExportCode("");
+                  setExportError(null);
+                }}
+                className="rounded-md border bd px-3 py-1.5 text-sm hoverable"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={exporting}
+                className="btn-primary rounded-md px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+              >
+                {exporting ? "…" : "Aceptar"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {phase === "recovery" && recovery && (
         <RecoveryDialog
           localSavedAt={recovery.localSavedAt}
@@ -455,7 +501,11 @@ export function ExamWorkspace({
             </>
           )}
           <button
-            onClick={emergencyExport}
+            onClick={() => {
+              setExportError(null);
+              setExportCode("");
+              setShowExport(true);
+            }}
             aria-label="opciones"
             className="rounded-md px-2 py-1.5 text-sm opacity-30 transition hover:opacity-70"
           >
