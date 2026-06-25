@@ -135,6 +135,7 @@ export function ExamDashboard({
                 <th className="px-3 py-2">Alumno</th>
                 <th className="px-3 py-2">Repo</th>
                 <th className="px-3 py-2">Estado</th>
+                <th className="px-3 py-2">Actividad</th>
                 <th className="px-3 py-2">Último commit</th>
                 <th className="px-3 py-2">IP</th>
               </tr>
@@ -154,6 +155,17 @@ export function ExamDashboard({
                     </a>
                   </td>
                   <td className="px-3 py-2">{r.archived ? "cerrado" : "abierto"}</td>
+                  <td className="px-3 py-2">
+                    {r.activity === "entregado" ? (
+                      <span className="text-blue-600 dark:text-blue-300">Entregado</span>
+                    ) : r.activity === "trabajando" ? (
+                      <span className="text-emerald-700 dark:text-emerald-300">
+                        Trabajando
+                      </span>
+                    ) : (
+                      <span className="opacity-50">Sin actividad</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{formatStampShort(r.lastCommitAt)}</td>
                   <td className="px-3 py-2 font-mono">{r.lastCommitIp ?? "—"}</td>
                 </tr>

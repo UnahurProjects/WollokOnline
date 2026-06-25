@@ -112,6 +112,16 @@ function ipFromMessage(message: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
+export type ExamActivity = "sin_actividad" | "trabajando" | "entregado";
+
+/** Deriva la actividad del alumno a partir del mensaje del último commit. */
+function activityFromMessage(message: string | undefined): ExamActivity {
+  if (!message) return "sin_actividad";
+  if (/entrega final/i.test(message)) return "entregado";
+  if (/auto-save/i.test(message)) return "trabajando";
+  return "sin_actividad"; // "Configuración del examen" u otro
+}
+
 export interface DashboardRow {
   username: string;
   repoName: string;
@@ -119,6 +129,7 @@ export interface DashboardRow {
   archived: boolean;
   lastCommitAt: string | null;
   lastCommitIp: string | null;
+  activity: ExamActivity;
 }
 
 /** Dashboard docente: lista los repos del examen + último commit + IP (leído de GitHub). */
@@ -143,6 +154,7 @@ export async function getDashboard(examName: string): Promise<DashboardRow[]> {
       archived: r.archived,
       lastCommitAt: last?.committedAt ?? null,
       lastCommitIp: ipFromMessage(last?.message),
+      activity: activityFromMessage(last?.message),
     });
   }
   rows.sort((a, b) => a.username.localeCompare(b.username));
