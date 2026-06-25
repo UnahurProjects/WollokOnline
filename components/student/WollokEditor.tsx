@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import type { editor } from "monaco-editor";
 import type { ActivityEventType } from "@/lib/types/db";
 import { useTheme } from "@/lib/theme/ThemeProvider";
+import { registerWollokLanguage } from "@/lib/wollok/monaco-language";
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((m) => m.Editor),
@@ -94,9 +95,10 @@ export function WollokEditor({
   return (
     <MonacoEditor
       path={path}
-      language="plaintext"
+      language="wollok"
       theme={theme === "dark" ? "vs-dark" : "vs"}
       value={value}
+      beforeMount={(monaco) => registerWollokLanguage(monaco)}
       onChange={(v) => onChange(v ?? "")}
       onMount={handleMount}
       options={{
