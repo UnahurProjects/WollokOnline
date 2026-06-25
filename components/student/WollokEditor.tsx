@@ -96,7 +96,7 @@ export function WollokEditor({
     <MonacoEditor
       path={path}
       language="wollok"
-      theme={theme === "dark" ? "vs-dark" : "vs"}
+      theme={theme === "dark" ? "wollok-dark" : "wollok-light"}
       value={value}
       beforeMount={(monaco) => registerWollokLanguage(monaco)}
       onChange={(v) => onChange(v ?? "")}
