@@ -9,6 +9,11 @@ Hay dos planos de configuración, no los mezcles:
 
 GitHub es la única fuente de verdad del examen (no hay base de datos).
 
+> **Dos organizaciones distintas:**
+> - **Código / desarrollo:** `UnahurProjects/WollokOnline` (lo que se deploya en Vercel).
+> - **Exámenes:** `ExamUnahurP` (org de prueba, `GITHUB_DEFAULT_ORG`) — ahí está instalada
+>   la GitHub App y los repos template; ahí se generan los repos por alumno.
+
 ---
 
 ## Conceptos clave (para no olvidarnos)
@@ -148,7 +153,7 @@ solo: subir el código, cargar las env y agregar el callback del dominio.
    git push origin main
    ```
    (El `.gitignore` excluye `.env.local`, `.secrets/` y `*.pem` → no se suben secretos.)
-2. **Vercel → New Project → Import** el repo `UnahurProyects/WollokOnline`.
+2. **Vercel → New Project → Import** el repo `UnahurProjects/WollokOnline`.
    Framework: Next.js (autodetectado). Root Directory: la raíz del repo.
 3. **Environment Variables** (Settings → Environment Variables): las mismas del
    `.env.local`, con dos diferencias:

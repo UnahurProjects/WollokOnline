@@ -9,7 +9,7 @@ import type { CommitResult } from "./types";
  */
 
 export function getOrg(): string {
-  return process.env.GITHUB_DEFAULT_ORG || "UnahurProyects";
+  return process.env.GITHUB_DEFAULT_ORG || "ExamUnahurP";
 }
 
 function repoName(examSlug: string, username: string): string {
