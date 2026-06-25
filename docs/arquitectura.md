@@ -69,6 +69,66 @@ Notas:
 
 ---
 
+## Endpoints (Route Handlers de Next.js)
+
+Todos viven bajo `app/api/**`. El navegador **solo** habla con estos (nunca con GitHub directo).
+
+| Endpoint | Método | Lo usa | Para qué | GitHub que toca |
+|---|---|---|---|---|
+| `/api/auth/[...nextauth]` | GET/POST | Alumno y docente | Login con GitHub (Auth.js) | OAuth App |
+| `/api/workspace?exam=` | GET | Alumno | Cargar el examen (archivos + estado) | Repo del alumno + `_control` |
+| `/api/commit` | POST | Alumno | Auto/Manual commit del trabajo | Repo del alumno (+ `_control`) |
+| `/api/submit` | POST | Alumno | Entrega final | Repo del alumno (+ `_control`) |
+| `/api/statement?exam=` | GET | Alumno | Imagen del enunciado | Repo del alumno |
+| `/api/export-auth` | POST | Alumno (con código docente) | Validar código para exportar `.zip` | — (solo valida `EXPORT_CODE`) |
+| `/api/exams/start` | POST | Docente | Iniciar examen: generar repos por alumno | Template → repos + `_control` |
+| `/api/exams/status?name=` | GET | Docente | Dashboard (último commit + IP + actividad) | Repos `{examen}-*` (GraphQL) + `_control` |
+| `/api/exams/close` | POST | Docente | Cierre duro (nadie commitea más) | `_control` |
+| `/api/exams/countdown` | POST | Docente | Iniciar/cancelar cuenta regresiva *(se reemplaza, ver nota)* | `_control` |
+
+> **Notas de evolución:**
+> - **`/api/exams/state` NO existe.** En el modelo **sin polling**, el cliente recibe
+>   `endsAt` al cargar (`/api/workspace`) y en cada respuesta de `/api/commit`. No se sondea.
+> - **`/api/exams/countdown`** (cuenta regresiva disparada por el docente) se reemplazará por:
+>   la **duración** definida al iniciar (`endsAt` en `_control`) + un futuro
+>   **`/api/exams/extend`** para sumar tiempo. El cierre real seguirá siendo `/api/exams/close`.
+
+## Flujo del docente
+
+```mermaid
+flowchart LR
+  subgraph Docente["App docente (navegador)"]
+    D["Next.js UI"]
+  end
+  subgraph Servidor["Route Handlers (Vercel)"]
+    R["/api/exams/*"]
+  end
+  subgraph GitHub["GitHub — ExamUnahurP"]
+    TPL["Repo template"]
+    REPOS["Repos {examen}-*"]
+    CTRL["_control/{examen}.json"]
+  end
+
+  D -- "POST /api/exams/start {nombre, template, intervalo, usernames}" --> R
+  R -- "REST: generate-from-template" --> TPL
+  R -- "REST: crear repo por alumno" --> REPOS
+  R -- "REST: escribir estado inicial" --> CTRL
+
+  D -- "GET /api/exams/status?name" --> R
+  R -- "GraphQL: último commit de todos" --> REPOS
+  R -- "REST: leer estado" --> CTRL
+  R -- "filas (alumno, commit, IP, actividad) + estado" --> D
+
+  D -- "POST /api/exams/close (cierre duro)" --> R
+  R -- "REST: marcar closed" --> CTRL
+
+  linkStyle 0,1,2,3 stroke:#16a34a,stroke-width:2px
+  linkStyle 4,5,6,7 stroke:#2563eb,stroke-width:2px
+  linkStyle 8,9 stroke:#dc2626,stroke-width:2px
+```
+
+---
+
 ## C4 — Diagrama de Contexto
 
 ```mermaid
