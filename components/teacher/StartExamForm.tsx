@@ -64,7 +64,7 @@ export function StartExamForm() {
 
       <div className="flex flex-col gap-1">
         <label className={label}>Auto-commit (min)</label>
-        <select name="autoCommitIntervalMinutes" defaultValue="5" className={field}>
+        <select name="autoCommitIntervalMinutes" defaultValue="10" className={field}>
           <option value="5">5</option>
           <option value="10">10</option>
           <option value="15">15</option>

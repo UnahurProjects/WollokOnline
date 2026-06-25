@@ -25,6 +25,8 @@ interface WorkspaceResponse {
   statementImageUrl: string | null;
   files: LocalFile[];
   lastCommitAt: string | null;
+  closingAt: string | null;
+  closed: boolean;
 }
 
 type Phase = "loading" | "recovery" | "ready" | "error";
@@ -80,6 +82,8 @@ export function ExamWorkspace({
   } | null>(null);
   const [consoleHeight, setConsoleHeight] = useState(280);
   const [closed, setClosed] = useState(false);
+  const [closingAt, setClosingAt] = useState<string | null>(null);
+  const [countdownMs, setCountdownMs] = useState(0);
   const [showStatement, setShowStatement] = useState(true);
   const [showFiles, setShowFiles] = useState(true);
   const [statementWidth, setStatementWidth] = useState(480);
@@ -96,6 +100,7 @@ export function ExamWorkspace({
   const submittedRef = useRef(false);
   const closedRef = useRef(false);
   const openCommitRef = useRef(false);
+  const countdownFiredRef = useRef(false);
   const autoCommitRef = useRef<() => void>(() => {});
   filesRef.current = files;
   submittedRef.current = submitted;
@@ -147,6 +152,9 @@ export function ExamWorkspace({
         const ws = data as WorkspaceResponse;
         setRemote(ws);
         setLastCommitAt(ws.lastCommitAt);
+        setClosed(ws.closed);
+        closedRef.current = ws.closed;
+        setClosingAt(ws.closingAt);
 
         const local = await getLocalWorkspace(localKey);
         if (cancelled) return;
@@ -225,66 +233,88 @@ export function ExamWorkspace({
       if (submittedRef.current || closedRef.current) return;
       setCommitting(true);
       setCommitMsg(null);
-      try {
-        await persistLocal(filesRef.current);
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ exam: examName, files: filesRef.current, kind }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "No se pudo sincronizar");
+      await persistLocal(filesRef.current);
+      const body = JSON.stringify({ exam: examName, files: filesRef.current, kind });
 
-        setLastCommitAt(data.committedAt);
-        await setLocalWorkspace({
-          examId: localKey,
-          files: filesRef.current,
-          lastLocalSaveAt: new Date().toISOString(),
-          lastCommitAt: data.committedAt,
-        });
-
-        if (kind === "final") {
-          submittedRef.current = true;
-          setSubmitted(true);
-          log([{ type: "final_submit", ts: new Date().toISOString() }]);
-          setCommitMsg("Entrega registrada ✓");
-        } else {
-          log([
-            {
-              type: kind === "manual" ? "manual_save" : "autosave",
-              ts: new Date().toISOString(),
-            },
-          ]);
-          setCommitMsg("Cambios subidos ✓");
-        }
-      } catch (e) {
-        // Sin conexión (fetch falla) vs error del servidor (examen cerrado, etc.).
-        if (typeof navigator !== "undefined" && !navigator.onLine) {
-          setCommitMsg("⚠ Sin conexión — tus cambios quedaron guardados; reintentá cuando vuelva internet.");
-        } else if (e instanceof TypeError) {
-          setCommitMsg("⚠ No se pudo conectar — reintentá en un momento.");
-        } else {
-          const msg = e instanceof Error ? e.message : "No se pudieron subir los cambios.";
-          if (/cerrad/i.test(msg)) {
-            setClosed(true);
-            closedRef.current = true;
+      const MAX = 3;
+      for (let attempt = 1; attempt <= MAX; attempt++) {
+        try {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            // Error del servidor (no se reintenta): examen cerrado, etc.
+            const msg = data.error ?? "No se pudieron subir los cambios.";
+            if (/cerrad/i.test(msg)) {
+              setClosed(true);
+              closedRef.current = true;
+            }
+            setCommitMsg(msg);
+            setCommitting(false);
+            return;
           }
-          setCommitMsg(msg);
+
+          setLastCommitAt(data.committedAt);
+          await setLocalWorkspace({
+            examId: localKey,
+            files: filesRef.current,
+            lastLocalSaveAt: new Date().toISOString(),
+            lastCommitAt: data.committedAt,
+          });
+
+          if (kind === "final") {
+            submittedRef.current = true;
+            setSubmitted(true);
+            log([{ type: "final_submit", ts: new Date().toISOString() }]);
+            setCommitMsg("Entrega registrada ✓");
+          } else {
+            log([
+              {
+                type: kind === "manual" ? "manual_save" : "autosave",
+                ts: new Date().toISOString(),
+              },
+            ]);
+            setCommitMsg("Cambios subidos ✓");
+          }
+          setCommitting(false);
+          return;
+        } catch {
+          // Error de red → reintentar con backoff (5s, 10s).
+          if (attempt < MAX) {
+            setCommitMsg(`⚠ Sin conexión — reintentando (${attempt}/${MAX})…`);
+            await new Promise((r) => setTimeout(r, attempt * 5000));
+          } else {
+            setCommitMsg(
+              "⚠ No se pudieron subir tus cambios (3 intentos). Probá 'Subir cambios' o avisá al docente. Tu trabajo está guardado.",
+            );
+          }
         }
-      } finally {
-        setCommitting(false);
       }
+      setCommitting(false);
     },
     [examName, localKey, log, persistLocal],
   );
 
   autoCommitRef.current = () => void runCommit("autosave", "/api/commit");
 
+  // Auto-commit con jitter (85%–115% del intervalo) para no commitear todos
+  // en el mismo segundo y repartir la carga a escala.
   useEffect(() => {
     if (phase !== "ready" || submitted) return;
-    const minutes = remote?.autoCommitIntervalMinutes ?? 5;
-    const id = setInterval(() => autoCommitRef.current(), minutes * 60_000);
-    return () => clearInterval(id);
+    const base = (remote?.autoCommitIntervalMinutes ?? 10) * 60_000;
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const delay = base * (0.85 + Math.random() * 0.3);
+      id = setTimeout(() => {
+        autoCommitRef.current();
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => clearTimeout(id);
   }, [phase, submitted, remote]);
 
   // Commit inicial al abrir → marca "presente" en el dashboard (hora + IP) apenas
@@ -296,23 +326,51 @@ export function ExamWorkspace({
     void runCommit("autosave", "/api/commit");
   }, [phase, submitted, closed, runCommit]);
 
-  // Detecta si el docente cerró el examen (repo archivado) y bloquea la UI.
+  // Sondea el estado del examen (cuenta regresiva / cierre) cada 20s.
   useEffect(() => {
     if (phase !== "ready") return;
     const id = setInterval(async () => {
-      if (submittedRef.current || closedRef.current) return;
+      if (closedRef.current) return;
       try {
         const res = await fetch(`/api/workspace?exam=${encodeURIComponent(examName)}`);
-        if (res.status === 403) {
+        if (!res.ok) return;
+        const data = await res.json();
+        setClosingAt(data.closingAt ?? null);
+        if (data.closed) {
           setClosed(true);
           closedRef.current = true;
         }
       } catch {
         // ignorar; reintenta en el próximo tick
       }
-    }, 45000);
+    }, 20000);
     return () => clearInterval(id);
   }, [phase, examName]);
+
+  // Resetea el "ya disparé el commit final" cuando cambia la hora de cierre.
+  useEffect(() => {
+    countdownFiredRef.current = false;
+  }, [closingAt]);
+
+  // Cuenta regresiva: actualiza el contador y, al llegar a 0, hace el commit final
+  // automático (NO bloquea; el cierre real lo hace el docente).
+  useEffect(() => {
+    if (!closingAt || closed || submitted) {
+      setCountdownMs(0);
+      return;
+    }
+    const tick = () => {
+      const remaining = new Date(closingAt).getTime() - Date.now();
+      setCountdownMs(Math.max(0, remaining));
+      if (remaining <= 0 && !countdownFiredRef.current) {
+        countdownFiredRef.current = true;
+        void runCommit("autosave", "/api/commit");
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [closingAt, closed, submitted, runCommit]);
 
   async function onRecover() {
     if (!recovery) return;
@@ -594,6 +652,23 @@ export function ExamWorkspace({
         <div className="bg-red-500/15 px-6 py-3 text-center text-base font-medium text-red-300">
           El examen fue cerrado por el docente. Ya no podés editar ni entregar. Tu entrega
           es tu último commit en GitHub.
+        </div>
+      )}
+
+      {!closed && !submitted && closingAt && (
+        <div className="bg-amber-500/15 px-6 py-3 text-center text-base font-medium text-amber-300">
+          {countdownMs > 0 ? (
+            <>
+              ⏳ El examen cierra en{" "}
+              <span className="font-bold tabular-nums">
+                {Math.floor(countdownMs / 60000)}:
+                {String(Math.floor((countdownMs % 60000) / 1000)).padStart(2, "0")}
+              </span>{" "}
+              — asegurate de subir tus cambios / entregar.
+            </>
+          ) : (
+            <>⏳ Se cumplió el tiempo. Esperá las indicaciones del docente.</>
+          )}
         </div>
       )}
 

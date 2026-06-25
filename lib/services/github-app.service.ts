@@ -249,4 +249,81 @@ export class AppGitHubService implements GitHubService {
       contentType: IMAGE_CONTENT_TYPES[ext] ?? "application/octet-stream",
     };
   }
+
+  async getFileText(ref: RepoRef, path: string): Promise<string | null> {
+    const octokit = await this.getOctokit();
+    try {
+      const res = await octokit.rest.repos.getContent({
+        owner: ref.org,
+        repo: ref.repoName,
+        path,
+      });
+      const file = res.data as { content?: string; encoding?: string };
+      if (!file.content) return null;
+      return Buffer.from(
+        file.content,
+        (file.encoding as BufferEncoding) || "base64",
+      ).toString("utf8");
+    } catch (e: any) {
+      if (e?.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async ensureRepo(opts: { org: string; name: string; description?: string }): Promise<void> {
+    const existing = await this.getRepo({ org: opts.org, repoName: opts.name });
+    if (existing) return;
+    const octokit = await this.getOctokit();
+    await octokit.rest.repos.createInOrg({
+      org: opts.org,
+      name: opts.name,
+      private: true,
+      auto_init: true,
+      description: opts.description,
+    });
+  }
+
+  async getLastCommits(opts: {
+    org: string;
+    repoNames: string[];
+  }): Promise<Record<string, CommitResult | null>> {
+    const octokit = await this.getOctokit();
+    const out: Record<string, CommitResult | null> = {};
+    try {
+      for (let i = 0; i < opts.repoNames.length; i += 50) {
+        const chunk = opts.repoNames.slice(i, i + 50);
+        const fields = chunk
+          .map(
+            (name, idx) =>
+              `r${idx}: repository(owner:$org, name:${JSON.stringify(name)}){ ` +
+              `defaultBranchRef{ target{ ... on Commit { oid committedDate message } } } }`,
+          )
+          .join("\n");
+        const query = `query($org:String!){ ${fields} }`;
+        const data: any = await octokit.graphql(query, { org: opts.org });
+        chunk.forEach((name, idx) => {
+          const c = data?.[`r${idx}`]?.defaultBranchRef?.target;
+          out[name] = c
+            ? {
+                sha: c.oid,
+                committedAt: c.committedDate,
+                htmlUrl: `https://github.com/${opts.org}/${name}/commit/${c.oid}`,
+                message: c.message,
+              }
+            : null;
+        });
+      }
+      return out;
+    } catch {
+      // Fallback REST (por repo) si GraphQL falla.
+      for (const name of opts.repoNames) {
+        try {
+          out[name] = await this.getLastCommit({ org: opts.org, repoName: name });
+        } catch {
+          out[name] = null;
+        }
+      }
+      return out;
+    }
+  }
 }

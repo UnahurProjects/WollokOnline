@@ -50,6 +50,15 @@ export interface GitHubService {
   getStatementImage(
     ref: RepoRef,
   ): Promise<{ data: Uint8Array; contentType: string } | null>;
+  /** Lee el texto de un archivo (o null si no existe). Para el repo de control. */
+  getFileText(ref: RepoRef, path: string): Promise<string | null>;
+  /** Crea el repo si no existe (con commit inicial). Para el repo de control. */
+  ensureRepo(opts: { org: string; name: string; description?: string }): Promise<void>;
+  /** Último commit de varios repos en pocas llamadas (GraphQL en la impl real). */
+  getLastCommits(opts: {
+    org: string;
+    repoNames: string[];
+  }): Promise<Record<string, CommitResult | null>>;
 }
 
 /** Extensiones de imagen soportadas para el enunciado → content-type. */
@@ -192,6 +201,35 @@ export class MockGitHubService implements GitHubService {
   async getStatementImage(): Promise<{ data: Uint8Array; contentType: string } | null> {
     // El template mock no trae imagen.
     return null;
+  }
+
+  async getFileText(ref: RepoRef, path: string): Promise<string | null> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    return r?.files.get(path) ?? null;
+  }
+
+  async ensureRepo(opts: { org: string; name: string }): Promise<void> {
+    const key = this.key(opts.org, opts.name);
+    if (!this.repos.get(key)) {
+      this.repos.set(key, {
+        name: opts.name,
+        org: opts.org,
+        archived: false,
+        files: new Map(),
+        lastCommit: null,
+      });
+    }
+  }
+
+  async getLastCommits(opts: {
+    org: string;
+    repoNames: string[];
+  }): Promise<Record<string, CommitResult | null>> {
+    const out: Record<string, CommitResult | null> = {};
+    for (const name of opts.repoNames) {
+      out[name] = this.repos.get(this.key(opts.org, name))?.lastCommit ?? null;
+    }
+    return out;
   }
 }
 

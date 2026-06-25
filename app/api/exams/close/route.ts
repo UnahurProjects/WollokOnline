@@ -12,8 +12,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await closeExam(String(body.examName));
-    return NextResponse.json(result);
+    await closeExam(String(body.examName));
+    return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Error al cerrar el examen";
     return NextResponse.json({ error: message }, { status: 400 });

@@ -2,6 +2,7 @@ import "server-only";
 import { sanitizeExamName } from "./exam.service";
 import { getGitHubService } from "./github-integration.service";
 import { getOrg } from "./exam.server";
+import { getExamControl } from "./control.server";
 import type { WorkspaceFile } from "./types";
 
 export class AccessError extends Error {
@@ -22,6 +23,10 @@ export interface StudentWorkspace {
   /** Solo .wlk/.wtest (el alumno no ve .exam/). */
   files: WorkspaceFile[];
   lastCommitAt: string | null;
+  /** Cuenta regresiva (blanda): hora de cierre o null. */
+  closingAt: string | null;
+  /** Cierre duro: si true, no puede commitear más. */
+  closed: boolean;
 }
 
 function studentRepoName(examName: string, username: string): string {
@@ -51,10 +56,9 @@ export async function getStudentWorkspace(
       403,
     );
   }
-  if (repo.archived) {
-    throw new AccessError("El examen está cerrado.", 403);
-  }
 
+  // El workspace SIEMPRE carga (aunque esté cerrado): el cliente muestra el estado.
+  const control = await getExamControl(slug);
   const all = await github.readWorkspace({ org, repoName: name });
 
   // Config (intervalo) desde .exam/config.json; el alumno no lo ve.
@@ -84,6 +88,8 @@ export async function getStudentWorkspace(
       : null,
     files: all.filter((f) => /\.(wlk|wtest)$/i.test(f.path)),
     lastCommitAt: last?.committedAt ?? null,
+    closingAt: control.closingAt,
+    closed: control.closed,
   };
 }
 

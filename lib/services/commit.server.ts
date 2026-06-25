@@ -7,6 +7,7 @@ import {
 import { sanitizeExamName } from "./exam.service";
 import { getOrg } from "./exam.server";
 import { getGitHubService } from "./github-integration.service";
+import { getExamControl } from "./control.server";
 import { AccessError } from "./student.server";
 import type { CommitResult, WorkspaceFile } from "./types";
 
@@ -32,7 +33,8 @@ export async function commitStudentWork(
 
   const repo = await github.getRepo({ org, repoName });
   if (!repo) throw new AccessError("No estás habilitado para este examen.", 403);
-  if (repo.archived) throw new AccessError("El examen está cerrado.", 403);
+  const control = await getExamControl(slug);
+  if (control.closed) throw new AccessError("El examen está cerrado.", 403);
 
   // Enforcement: solo archivos existentes, .wlk/.wtest (sin .exam/activity en Fase 1).
   const existing = new Set((await github.readWorkspace({ org, repoName })).map((f) => f.path));

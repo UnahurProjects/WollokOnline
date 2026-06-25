@@ -10,8 +10,8 @@ export async function GET(req: Request) {
   if (!name) return NextResponse.json({ error: "Falta name" }, { status: 400 });
 
   try {
-    const rows = await getDashboard(name);
-    return NextResponse.json({ rows });
+    const data = await getDashboard(name);
+    return NextResponse.json(data);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Error al leer el estado";
     return NextResponse.json({ error: message }, { status: 400 });

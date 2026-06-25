@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/session";
 import { getDashboard } from "@/lib/services/exam.server";
 import { sanitizeExamName } from "@/lib/services/exam.service";
 import { ExamDashboard } from "@/components/teacher/ExamDashboard";
-import type { DashboardRow } from "@/lib/services/exam.server";
+import type { DashboardData } from "@/lib/services/exam.server";
 
 export default async function ExamDashboardPage({
   params,
@@ -14,10 +14,10 @@ export default async function ExamDashboardPage({
   const { name } = await params;
   const slug = sanitizeExamName(decodeURIComponent(name));
 
-  let rows: DashboardRow[] = [];
+  let data: DashboardData | null = null;
   let error: string | null = null;
   try {
-    rows = await getDashboard(slug);
+    data = await getDashboard(slug);
   } catch (e) {
     error = e instanceof Error ? e.message : "No se pudo cargar el examen";
   }
@@ -32,15 +32,15 @@ export default async function ExamDashboardPage({
 
       <header>
         <h1 className="text-2xl font-bold">{slug}</h1>
-        <p className="text-sm opacity-60">{rows.length} alumno(s)</p>
+        <p className="text-sm opacity-60">{data?.rows.length ?? 0} alumno(s)</p>
       </header>
 
-      {error ? (
+      {error || !data ? (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
-          {error}
+          {error ?? "No se pudo cargar el examen"}
         </div>
       ) : (
-        <ExamDashboard examName={slug} initial={rows} />
+        <ExamDashboard examName={slug} initial={data} />
       )}
     </main>
   );
