@@ -45,7 +45,8 @@ pesar en la carga inicial.
 - Código y tests editables: `.wlk` / `.wtest` (vienen del repo template; árbol fijo).
 - Enunciado: una **imagen** en el repo (ej. `readme.png` / `statement/statement.png`), servida
   por `/api/statement` y mostrada en el panel lateral (no como texto seleccionable).
-- `.exam/config.json`: configuración del examen (ej. `autoCommitIntervalMinutes`).
+- La configuración del examen (intervalo, hora de fin) **no** vive en el repo del alumno:
+  está centralizada en `_control/{examen}.json`.
 
 ## Fase 2 (no implementado)
 

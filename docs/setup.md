@@ -126,14 +126,16 @@ si no GitHub devuelve "redirect_uri mismatch".
 Cada docente arma su **repo template** en la organización:
 - Privado, con los `.wlk`/`.wtest` base.
 - Enunciado opcional (ej. `statement/statement.png`).
-- `.exam/config.json` (ej. `{ "autoCommitIntervalMinutes": 5 }`).
 - Settings del repo → marcar **Template repository** ✅.
+
+> El intervalo y la duración se eligen al iniciar el examen (no van en el template);
+> quedan en `_control/{examen}.json`.
 
 ### B.2 — Tomar el examen (en la plataforma)
 
 1. Login (su usuario debe estar en `TEACHERS`).
-2. **Iniciar examen**: nombre + repo template + intervalo + pegar los usuarios de
-   GitHub presentes → se genera un repo privado por alumno.
+2. **Iniciar examen**: nombre + repo template + intervalo + duración + pegar los usuarios
+   de GitHub presentes → se genera un repo privado por alumno.
 3. Monitorear el **dashboard** (último commit + IP por alumno).
 4. **Cerrar** el examen → los repos quedan archivados (solo lectura).
 

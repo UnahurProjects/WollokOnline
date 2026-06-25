@@ -84,14 +84,16 @@ Todos viven bajo `app/api/**`. El navegador **solo** habla con estos (nunca con 
 | `/api/exams/start` | POST | Docente | Iniciar examen: generar repos por alumno | Template → repos + `_control` |
 | `/api/exams/status?name=` | GET | Docente | Dashboard (último commit + IP + actividad) | Repos `{examen}-*` (GraphQL) + `_control` |
 | `/api/exams/close` | POST | Docente | Cierre duro (nadie commitea más) | `_control` |
-| `/api/exams/countdown` | POST | Docente | Iniciar/cancelar cuenta regresiva *(se reemplaza, ver nota)* | `_control` |
+| `/api/exams/extend` | POST | Docente | Sumar minutos a la hora de fin | `_control` |
 
-> **Notas de evolución:**
+> **Notas:**
 > - **`/api/exams/state` NO existe.** En el modelo **sin polling**, el cliente recibe
 >   `endsAt` al cargar (`/api/workspace`) y en cada respuesta de `/api/commit`. No se sondea.
-> - **`/api/exams/countdown`** (cuenta regresiva disparada por el docente) se reemplazará por:
->   la **duración** definida al iniciar (`endsAt` en `_control`) + un futuro
->   **`/api/exams/extend`** para sumar tiempo. El cierre real seguirá siendo `/api/exams/close`.
+> - **Hora de fin:** se fija al iniciar (`durationMinutes` → `endsAt` en `_control`, o sin
+>   límite si es 0) y se ajusta con `/api/exams/extend`. El cierre manual inmediato es
+>   `/api/exams/close`. (Reemplazó al viejo `/api/exams/countdown`, ya eliminado.)
+> - **Config del examen:** vive solo en `_control/{examen}.json` (intervalo + `endsAt` +
+>   `closed`). No se escribe nada dentro del repo del alumno.
 
 ## Flujo del docente
 
@@ -109,7 +111,7 @@ flowchart LR
     CTRL["_control/{examen}.json"]
   end
 
-  D -- "POST /api/exams/start {nombre, template, intervalo, usernames}" --> R
+  D -- "POST /api/exams/start {nombre, template, intervalo, duración, usernames}" --> R
   R -- "REST: generate-from-template" --> TPL
   R -- "REST: crear repo por alumno" --> REPOS
   R -- "REST: escribir estado inicial" --> CTRL

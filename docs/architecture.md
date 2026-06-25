@@ -41,10 +41,11 @@ GitHub  ── única fuente de verdad (org de exámenes)
 ## Flujo
 
 1. **Preparar (docente, día previo):** repo **template** privado (marcado como *Template
-   repository*) con `.wlk`/`.wtest`, enunciado (imagen) y `.exam/config.json`.
+   repository*) con `.wlk`/`.wtest` y el enunciado (imagen).
 2. **Iniciar (docente, un paso):** pega los usernames presentes → la GitHub App **genera**
-   `{examen}-{usuario}` por alumno (desde el template) y escribe el intervalo en
-   `.exam/config.json`.
+   `{examen}-{usuario}` por alumno (desde el template) e inicializa el control del examen
+   (intervalo + hora de fin) en `_control/{examen}.json`. No se escribe nada dentro del
+   repo del alumno.
 3. **Rendir (alumno):** login → ingresa el nombre del examen → la app carga su repo en
    Monaco; ejecuta tests/consola en el navegador; autosave local + commits a GitHub.
 4. **Cerrar (docente):** la GitHub App **archiva** los repos `{examen}-*`. El alumno detecta
@@ -52,7 +53,8 @@ GitHub  ── única fuente de verdad (org de exámenes)
 
 ## Endpoints
 
-- Docente: `POST /api/exams/start`, `POST /api/exams/close`, `GET /api/exams/status?name=`.
+- Docente: `POST /api/exams/start`, `POST /api/exams/extend`, `POST /api/exams/close`,
+  `GET /api/exams/status?name=`.
 - Alumno: `GET /api/workspace?exam=`, `POST /api/commit`, `POST /api/submit`,
   `GET /api/statement?exam=` (imagen del enunciado).
 - Validan contra GitHub: usuario autenticado + repo existe + (para escribir) no archivado.
