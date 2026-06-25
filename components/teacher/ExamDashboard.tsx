@@ -24,6 +24,11 @@ export function ExamDashboard({
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // El contador depende de la hora actual, que difiere entre el render del
+  // servidor y la hidratación del cliente. Hasta montar mostramos un placeholder
+  // estable para evitar el desajuste de hidratación.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Reloj para el contador (si hay hora de fin).
   useEffect(() => {
@@ -36,7 +41,7 @@ export function ExamDashboard({
     ? Math.max(0, new Date(control.endsAt).getTime() - now)
     : 0;
   const hasEnd = !!control.endsAt && !control.closed;
-  const timeUp = hasEnd && remainingMs <= 0;
+  const timeUp = mounted && hasEnd && remainingMs <= 0;
 
   async function refresh() {
     setLoading(true);
@@ -118,7 +123,7 @@ export function ExamDashboard({
             </span>
           ) : hasEnd ? (
             <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-sm text-amber-300">
-              Termina en {fmt(remainingMs)}
+              Termina en {mounted ? fmt(remainingMs) : "…"}
             </span>
           ) : (
             <span className="rounded-full border border-emerald-400/40 px-2 py-0.5 text-sm text-emerald-300">
