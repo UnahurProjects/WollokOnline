@@ -23,8 +23,8 @@ export interface StudentWorkspace {
   /** Solo .wlk/.wtest (el alumno no ve .exam/). */
   files: WorkspaceFile[];
   lastCommitAt: string | null;
-  /** Cuenta regresiva (blanda): hora de cierre o null. */
-  closingAt: string | null;
+  /** Hora de fin del examen (ISO) o null. El cliente calcula el contador desde acá. */
+  endsAt: string | null;
   /** Cierre duro: si true, no puede commitear más. */
   closed: boolean;
 }
@@ -88,7 +88,7 @@ export async function getStudentWorkspace(
       : null,
     files: all.filter((f) => /\.(wlk|wtest)$/i.test(f.path)),
     lastCommitAt: last?.committedAt ?? null,
-    closingAt: control.closingAt,
+    endsAt: control.endsAt,
     closed: control.closed,
   };
 }

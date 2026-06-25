@@ -8,19 +8,20 @@ import { getGitHubService } from "./github-integration.service";
  * (un archivo JSON por examen). Una sola escritura por acción (no por alumno).
  *
  * - intervalMinutes: intervalo de auto-commit del examen.
- * - closingAt: hora de cierre de la cuenta regresiva (ISO) o null. Es BLANDA:
- *   solo muestra el contador + dispara commit final; NO bloquea.
- * - closed: cierre DURO. Si es true, el server rechaza commits.
+ * - endsAt: hora de fin del examen (ISO) o null. Se fija al iniciar (inicio +
+ *   duración) y se puede extender. El cliente calcula el contador desde acá; el
+ *   server rechaza commits pasada esa hora.
+ * - closed: cierre DURO/manual. Si es true, el server rechaza commits ya mismo.
  */
 export const CONTROL_REPO = "_control";
 
 export interface ExamControl {
   intervalMinutes: number;
-  closingAt: string | null;
+  endsAt: string | null;
   closed: boolean;
 }
 
-const DEFAULT: ExamControl = { intervalMinutes: 10, closingAt: null, closed: false };
+const DEFAULT: ExamControl = { intervalMinutes: 10, endsAt: null, closed: false };
 
 function controlPath(slug: string): string {
   return `${slug}.json`;
@@ -41,7 +42,7 @@ export async function getExamControl(examName: string): Promise<ExamControl> {
     return {
       intervalMinutes:
         typeof p.intervalMinutes === "number" ? p.intervalMinutes : DEFAULT.intervalMinutes,
-      closingAt: typeof p.closingAt === "string" ? p.closingAt : null,
+      endsAt: typeof p.endsAt === "string" ? p.endsAt : null,
       closed: !!p.closed,
     };
   } catch {

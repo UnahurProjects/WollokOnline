@@ -25,7 +25,7 @@ interface WorkspaceResponse {
   statementImageUrl: string | null;
   files: LocalFile[];
   lastCommitAt: string | null;
-  closingAt: string | null;
+  endsAt: string | null;
   closed: boolean;
 }
 
@@ -82,8 +82,8 @@ export function ExamWorkspace({
   } | null>(null);
   const [consoleHeight, setConsoleHeight] = useState(280);
   const [closed, setClosed] = useState(false);
-  const [closingAt, setClosingAt] = useState<string | null>(null);
-  const [countdownMs, setCountdownMs] = useState(0);
+  const [endsAt, setEndsAt] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [showStatement, setShowStatement] = useState(true);
   const [showFiles, setShowFiles] = useState(true);
   const [statementWidth, setStatementWidth] = useState(480);
@@ -154,7 +154,7 @@ export function ExamWorkspace({
         setLastCommitAt(ws.lastCommitAt);
         setClosed(ws.closed);
         closedRef.current = ws.closed;
-        setClosingAt(ws.closingAt);
+        setEndsAt(ws.endsAt);
 
         const local = await getLocalWorkspace(localKey);
         if (cancelled) return;
@@ -258,6 +258,8 @@ export function ExamWorkspace({
           }
 
           setLastCommitAt(data.committedAt);
+          // El server devuelve la hora de fin vigente (refleja extensiones).
+          if ("endsAt" in data) setEndsAt(data.endsAt ?? null);
           await setLocalWorkspace({
             examId: localKey,
             files: filesRef.current,
@@ -307,6 +309,8 @@ export function ExamWorkspace({
     const base = (remote?.autoCommitIntervalMinutes ?? 10) * 60_000;
     let id: ReturnType<typeof setTimeout>;
     const schedule = () => {
+      // No seguir auto-commiteando pasada la hora de fin.
+      if (endsAt && Date.now() >= new Date(endsAt).getTime()) return;
       const delay = base * (0.85 + Math.random() * 0.3);
       id = setTimeout(() => {
         autoCommitRef.current();
@@ -315,7 +319,7 @@ export function ExamWorkspace({
     };
     schedule();
     return () => clearTimeout(id);
-  }, [phase, submitted, remote]);
+  }, [phase, submitted, remote, endsAt]);
 
   // Commit inicial al abrir → marca "presente" en el dashboard (hora + IP) apenas
   // el alumno entra, sin esperar al primer auto-commit.
@@ -326,43 +330,21 @@ export function ExamWorkspace({
     void runCommit("autosave", "/api/commit");
   }, [phase, submitted, closed, runCommit]);
 
-  // Sondea el estado del examen (cuenta regresiva / cierre) cada 20s.
-  useEffect(() => {
-    if (phase !== "ready") return;
-    const id = setInterval(async () => {
-      if (closedRef.current) return;
-      try {
-        const res = await fetch(`/api/workspace?exam=${encodeURIComponent(examName)}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setClosingAt(data.closingAt ?? null);
-        if (data.closed) {
-          setClosed(true);
-          closedRef.current = true;
-        }
-      } catch {
-        // ignorar; reintenta en el próximo tick
-      }
-    }, 20000);
-    return () => clearInterval(id);
-  }, [phase, examName]);
+  // SIN polling: el estado del examen (endsAt) llega al cargar y en cada respuesta
+  // de commit. El cierre duro lo detecta el cliente cuando el server rechaza un commit.
 
-  // Resetea el "ya disparé el commit final" cuando cambia la hora de cierre.
+  // Resetea el "ya disparé el commit final" cuando cambia la hora de fin (ej. extensión).
   useEffect(() => {
     countdownFiredRef.current = false;
-  }, [closingAt]);
+  }, [endsAt]);
 
-  // Cuenta regresiva: actualiza el contador y, al llegar a 0, hace el commit final
-  // automático (NO bloquea; el cierre real lo hace el docente).
+  // Contador local desde endsAt. Al llegar a 0 hace el commit final automático.
   useEffect(() => {
-    if (!closingAt || closed || submitted) {
-      setCountdownMs(0);
-      return;
-    }
+    if (!endsAt || closed || submitted) return;
     const tick = () => {
-      const remaining = new Date(closingAt).getTime() - Date.now();
-      setCountdownMs(Math.max(0, remaining));
-      if (remaining <= 0 && !countdownFiredRef.current) {
+      const t = Date.now();
+      setNow(t);
+      if (new Date(endsAt).getTime() - t <= 0 && !countdownFiredRef.current) {
         countdownFiredRef.current = true;
         void runCommit("autosave", "/api/commit");
       }
@@ -370,7 +352,7 @@ export function ExamWorkspace({
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [closingAt, closed, submitted, runCommit]);
+  }, [endsAt, closed, submitted, runCommit]);
 
   async function onRecover() {
     if (!recovery) return;
@@ -499,6 +481,9 @@ export function ExamWorkspace({
   }
 
   const active = files.find((f) => f.path === activePath) ?? null;
+  const remainingMs = endsAt ? Math.max(0, new Date(endsAt).getTime() - now) : 0;
+  const timeUp = !!endsAt && !closed && !submitted && new Date(endsAt).getTime() <= now;
+  const locked = closed || timeUp;
 
   return (
     <div
@@ -609,9 +594,9 @@ export function ExamWorkspace({
             <span className="rounded-md border border-emerald-400/40 px-3 py-1.5 text-sm text-emerald-300">
               Entregado
             </span>
-          ) : closed ? (
+          ) : locked ? (
             <span className="rounded-md border border-red-500/40 px-3 py-1.5 text-sm font-semibold text-red-300">
-              Examen cerrado
+              {closed ? "Examen cerrado" : "Tiempo cumplido"}
             </span>
           ) : (
             <>
@@ -655,14 +640,14 @@ export function ExamWorkspace({
         </div>
       )}
 
-      {!closed && !submitted && closingAt && (
+      {!closed && !submitted && endsAt && remainingMs <= 5 * 60_000 && (
         <div className="bg-amber-500/15 px-6 py-3 text-center text-base font-medium text-amber-300">
-          {countdownMs > 0 ? (
+          {remainingMs > 0 ? (
             <>
               ⏳ El examen cierra en{" "}
               <span className="font-bold tabular-nums">
-                {Math.floor(countdownMs / 60000)}:
-                {String(Math.floor((countdownMs % 60000) / 1000)).padStart(2, "0")}
+                {Math.floor(remainingMs / 60000)}:
+                {String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}
               </span>{" "}
               — asegurate de subir tus cambios / entregar.
             </>
@@ -700,7 +685,7 @@ export function ExamWorkspace({
               <WollokEditor
                 path={active.path}
                 value={active.content}
-                editable={!submitted && !closed}
+                editable={!submitted && !locked}
                 onChange={(v) => onEditorChange(active.path, v)}
                 onActivity={onActivity}
               />

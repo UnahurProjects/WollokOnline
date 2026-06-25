@@ -21,6 +21,8 @@ export interface StartExamInput {
   examName: string;
   usernames: string;
   autoCommitIntervalMinutes: number;
+  /** Duración del examen en minutos (0 = sin límite de tiempo). */
+  durationMinutes: number;
   teacher: string;
 }
 
@@ -67,33 +69,35 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
     created.push({ username, repoName: repo.name, repoUrl: repo.url });
   }
 
+  const endsAt =
+    input.durationMinutes > 0
+      ? new Date(Date.now() + input.durationMinutes * 60_000).toISOString()
+      : null;
+
   await setExamControl(slug, {
     intervalMinutes: input.autoCommitIntervalMinutes,
-    closingAt: null,
+    endsAt,
     closed: false,
   });
 
   return { examName: slug, org, created };
 }
 
-/** Inicia la cuenta regresiva (blanda): muestra el contador y dispara commit final. */
-export async function startCountdown(
+/** Extiende el examen sumando minutos a la hora de fin (o desde ahora si no había). */
+export async function extendExam(
   examName: string,
   minutes: number,
-): Promise<{ closingAt: string }> {
-  const closingAt = new Date(Date.now() + minutes * 60_000).toISOString();
-  await setExamControl(examName, { closingAt });
-  return { closingAt };
+): Promise<{ endsAt: string }> {
+  const control = await getExamControl(examName);
+  const base = control.endsAt ? new Date(control.endsAt).getTime() : Date.now();
+  const endsAt = new Date(base + minutes * 60_000).toISOString();
+  await setExamControl(examName, { endsAt });
+  return { endsAt };
 }
 
-/** Cancela la cuenta regresiva (los alumnos siguen trabajando). */
-export async function cancelCountdown(examName: string): Promise<void> {
-  await setExamControl(examName, { closingAt: null });
-}
-
-/** Cierre DURO: nadie puede commitear más. */
+/** Cierre DURO/manual: nadie puede commitear más, sin esperar a la hora de fin. */
 export async function closeExam(examName: string): Promise<void> {
-  await setExamControl(examName, { closed: true, closingAt: null });
+  await setExamControl(examName, { closed: true });
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { formatStampShort } from "@/lib/format";
 import type { DashboardData, DashboardRow } from "@/lib/services/exam.server";
 
-const GRACE_MIN = 5;
+const EXTEND_MIN = 15;
 
 /**
  * Dashboard docente (GitHub-only): alumnos con último commit + IP + actividad,
- * leídos en lote (GraphQL). Refresco manual. Controles de cierre: cuenta
- * regresiva blanda (con cancelar) + cierre duro.
+ * leídos en lote (GraphQL). Refresco manual. Controles: extender tiempo + finalizar.
  */
 export function ExamDashboard({
   examName,
@@ -26,17 +25,18 @@ export function ExamDashboard({
   const [confirmClose, setConfirmClose] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  // Reloj para el contador de la cuenta regresiva.
+  // Reloj para el contador (si hay hora de fin).
   useEffect(() => {
-    if (!control.closingAt) return;
+    if (!control.endsAt) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [control.closingAt]);
+  }, [control.endsAt]);
 
-  const remainingMs = control.closingAt
-    ? Math.max(0, new Date(control.closingAt).getTime() - now)
+  const remainingMs = control.endsAt
+    ? Math.max(0, new Date(control.endsAt).getTime() - now)
     : 0;
-  const counting = !!control.closingAt && !control.closed;
+  const hasEnd = !!control.endsAt && !control.closed;
+  const timeUp = hasEnd && remainingMs <= 0;
 
   async function refresh() {
     setLoading(true);
@@ -70,20 +70,12 @@ export function ExamDashboard({
     }
   }
 
-  const startCountdown = () =>
+  const extend = () =>
     action(() =>
-      fetch("/api/exams/countdown", {
+      fetch("/api/exams/extend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ examName, action: "start", minutes: GRACE_MIN }),
-      }),
-    );
-  const cancelCountdown = () =>
-    action(() =>
-      fetch("/api/exams/countdown", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ examName, action: "cancel" }),
+        body: JSON.stringify({ examName, minutes: EXTEND_MIN }),
       }),
     );
   const closeExam = () =>
@@ -95,9 +87,14 @@ export function ExamDashboard({
       }),
     );
 
-  const mmss = (ms: number) => {
+  const fmt = (ms: number) => {
     const s = Math.ceil(ms / 1000);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+      : `${m}:${String(sec).padStart(2, "0")}`;
   };
 
   return (
@@ -115,39 +112,33 @@ export function ExamDashboard({
             <span className="rounded-full border bd px-2 py-0.5 text-sm uppercase opacity-70">
               Cerrado
             </span>
-          ) : counting ? (
+          ) : timeUp ? (
+            <span className="rounded-full border border-red-500/50 px-2 py-0.5 text-sm text-red-300">
+              Tiempo cumplido
+            </span>
+          ) : hasEnd ? (
             <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-sm text-amber-300">
-              Cierra en {mmss(remainingMs)}
+              Termina en {fmt(remainingMs)}
             </span>
           ) : (
             <span className="rounded-full border border-emerald-400/40 px-2 py-0.5 text-sm text-emerald-300">
-              Abierto
+              Abierto (sin límite)
             </span>
           )}
         </div>
 
         {!control.closed && (
           <div className="flex flex-wrap items-center gap-2">
-            {counting ? (
-              <button
-                onClick={cancelCountdown}
-                disabled={busy}
-                className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable disabled:opacity-50"
-              >
-                Cancelar cuenta regresiva
-              </button>
-            ) : (
-              <button
-                onClick={startCountdown}
-                disabled={busy}
-                className="rounded-md border border-amber-400/50 px-3 py-1.5 text-sm text-amber-300 transition hover:bg-amber-400/10 disabled:opacity-50"
-              >
-                Iniciar cuenta regresiva ({GRACE_MIN} min)
-              </button>
-            )}
+            <button
+              onClick={extend}
+              disabled={busy}
+              className="rounded-md border border-amber-400/50 px-3 py-1.5 text-sm text-amber-300 transition hover:bg-amber-400/10 disabled:opacity-50"
+            >
+              Extender +{EXTEND_MIN} min
+            </button>
             {confirmClose ? (
               <span className="flex items-center gap-2">
-                <span className="text-sm opacity-70">¿Cerrar de verdad?</span>
+                <span className="text-sm opacity-70">¿Finalizar de verdad?</span>
                 <button
                   onClick={closeExam}
                   disabled={busy}
@@ -167,7 +158,7 @@ export function ExamDashboard({
                 onClick={() => setConfirmClose(true)}
                 className="rounded-md border border-red-500/40 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/10"
               >
-                Cerrar examen
+                Finalizar examen
               </button>
             )}
           </div>

@@ -19,7 +19,8 @@ export async function POST(req: Request) {
       templateRepo: String(body.templateRepo),
       examName: String(body.examName),
       usernames: String(body.usernames ?? ""),
-      autoCommitIntervalMinutes: Number(body.autoCommitIntervalMinutes) || 5,
+      autoCommitIntervalMinutes: Number(body.autoCommitIntervalMinutes) || 10,
+      durationMinutes: Number(body.durationMinutes) || 0,
       teacher: guard.session.user.githubUsername,
     });
     return NextResponse.json(result, { status: 201 });

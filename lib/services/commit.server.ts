@@ -19,13 +19,16 @@ import type { CommitResult, WorkspaceFile } from "./types";
  * crear ni borrar archivos). La IP de origen se incluye en el mensaje de commit.
  * (En Fase 1 NO se commitea `.exam/activity.ndjson`.)
  */
+/** Gracia (ms) para que el último commit entre aunque el reloj difiera un poco. */
+const END_GRACE_MS = 120_000;
+
 export async function commitStudentWork(
   examName: string,
   username: string,
   files: WorkspaceFile[],
   kind: "autosave" | "manual" | "final",
   ip: string,
-): Promise<CommitResult> {
+): Promise<CommitResult & { endsAt: string | null }> {
   const slug = sanitizeExamName(examName);
   const org = getOrg();
   const repoName = `${slug}-${username.toLowerCase()}`;
@@ -35,6 +38,9 @@ export async function commitStudentWork(
   if (!repo) throw new AccessError("No estás habilitado para este examen.", 403);
   const control = await getExamControl(slug);
   if (control.closed) throw new AccessError("El examen está cerrado.", 403);
+  if (control.endsAt && Date.now() > new Date(control.endsAt).getTime() + END_GRACE_MS) {
+    throw new AccessError("Se cumplió el tiempo del examen.", 403);
+  }
 
   // Enforcement: solo archivos existentes, .wlk/.wtest (sin .exam/activity en Fase 1).
   const existing = new Set((await github.readWorkspace({ org, repoName })).map((f) => f.path));
@@ -50,5 +56,6 @@ export async function commitStudentWork(
     kind === "final" ? finalSubmitCommitMessage(now) : autoSaveCommitMessage(now);
   const message = `${base} · ip ${ip}`;
 
-  return github.commitFiles({ org, repoName, files: payload, message });
+  const result = await github.commitFiles({ org, repoName, files: payload, message });
+  return { ...result, endsAt: control.endsAt };
 }

@@ -29,6 +29,7 @@ export function StartExamForm() {
           examName: fd.get("examName"),
           templateRepo: fd.get("templateRepo"),
           autoCommitIntervalMinutes: Number(fd.get("autoCommitIntervalMinutes")),
+          durationMinutes: Number(fd.get("durationMinutes")),
           usernames: String(fd.get("usernames") ?? ""),
         }),
       });
@@ -62,14 +63,27 @@ export function StartExamForm() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className={label}>Auto-commit (min)</label>
-        <select name="autoCommitIntervalMinutes" defaultValue="10" className={field}>
-          <option value="5">5</option>
-          <option value="10">10</option>
-          <option value="15">15</option>
-          <option value="20">20</option>
-        </select>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <label className={label}>Auto-commit (min)</label>
+          <select name="autoCommitIntervalMinutes" defaultValue="10" className={field}>
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className={label}>Duración (min)</label>
+          <input
+            name="durationMinutes"
+            type="number"
+            min={0}
+            defaultValue={120}
+            className={field}
+          />
+          <span className="text-xs opacity-50">0 = sin límite de tiempo.</span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">
