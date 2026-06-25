@@ -336,6 +336,39 @@ export function ExamWorkspace({
     window.addEventListener("pointerup", onUp);
   }
 
+  // Exportación de emergencia (GitHub caído): descarga un .zip con los .wlk/.wtest
+  // actuales (copia local), gateada por un código docente validado server-side.
+  async function emergencyExport() {
+    const code = window.prompt("Código:");
+    if (!code) return;
+    try {
+      const res = await fetch("/api/export-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        window.alert("Código incorrecto.");
+        return;
+      }
+      const wlk = filesRef.current.filter((f) => /\.(wlk|wtest)$/i.test(f.path));
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      for (const f of wlk) zip.file(f.path, f.content);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${examName}-${username}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert("No se pudo exportar.");
+    }
+  }
+
   if (phase === "loading") {
     return <p className="p-10 text-sm opacity-60">Cargando examen…</p>;
   }
@@ -421,6 +454,13 @@ export function ExamWorkspace({
               </button>
             </>
           )}
+          <button
+            onClick={emergencyExport}
+            aria-label="opciones"
+            className="rounded-md px-2 py-1.5 text-sm opacity-30 transition hover:opacity-70"
+          >
+            ⋯
+          </button>
         </div>
       </header>
 
