@@ -10,6 +10,9 @@ import { resolveRole } from "@/lib/auth/roles";
  * rol resuelto por configuración (TEACHERS).
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Confiar en el host del request (necesario detrás del proxy de Vercel para
+  // que el flujo OAuth/PKCE use el dominio correcto).
+  trustHost: true,
   providers: [
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
