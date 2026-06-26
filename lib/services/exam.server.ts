@@ -155,6 +155,7 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
     endsAt,
     closed: false,
     roster: requested,
+    startedAt: new Date().toISOString(),
   };
   try {
     await setExamControl(slug, control);
@@ -269,12 +270,19 @@ export async function getDashboard(examName: string): Promise<DashboardData> {
 
   const now = Date.now();
   const lateMs = control.intervalMinutes * 60_000;
+  const startedMs = control.startedAt ? new Date(control.startedAt).getTime() : null;
 
   const rows: DashboardRow[] = repos.map((r) => {
     const last = lasts[r.name] ?? null;
     const lastAt = last?.committedAt ?? null;
+    // "Atrasado" (rojo) = examen abierto Y:
+    //  - commiteó pero hace más que el intervalo, o
+    //  - nunca commiteó y ya pasó un intervalo desde que arrancó (gracia inicial).
     const late =
-      !control.closed && (!lastAt || now - new Date(lastAt).getTime() > lateMs);
+      !control.closed &&
+      (lastAt
+        ? now - new Date(lastAt).getTime() > lateMs
+        : startedMs !== null && now - startedMs > lateMs);
     return {
       username: r.name.slice(`${slug}-`.length),
       repoName: r.name,

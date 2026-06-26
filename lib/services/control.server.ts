@@ -22,9 +22,18 @@ export interface ExamControl {
   endsAt: string | null;
   closed: boolean;
   roster: string[];
+  /** Cuándo arrancó el examen (ISO). Da una gracia inicial: un alumno sin commits no
+   *  cuenta como "atrasado" hasta que pasa un intervalo desde acá. */
+  startedAt: string | null;
 }
 
-const DEFAULT: ExamControl = { intervalMinutes: 10, endsAt: null, closed: false, roster: [] };
+const DEFAULT: ExamControl = {
+  intervalMinutes: 10,
+  endsAt: null,
+  closed: false,
+  roster: [],
+  startedAt: null,
+};
 
 function controlPath(slug: string): string {
   return `${slug}.json`;
@@ -51,6 +60,7 @@ export async function readExamControl(examName: string): Promise<ExamControl | n
       roster: Array.isArray(p.roster)
         ? p.roster.filter((u: unknown): u is string => typeof u === "string")
         : [],
+      startedAt: typeof p.startedAt === "string" ? p.startedAt : null,
     };
   } catch {
     return null;
