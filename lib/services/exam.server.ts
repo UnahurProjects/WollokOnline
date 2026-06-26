@@ -1,7 +1,12 @@
 import "server-only";
 import { parseUsernames, sanitizeExamName } from "./exam.service";
 import { getGitHubService } from "./github-integration.service";
-import { getExamControl, setExamControl, type ExamControl } from "./control.server";
+import {
+  CONTROL_REPO,
+  getExamControl,
+  setExamControl,
+  type ExamControl,
+} from "./control.server";
 
 /**
  * Lógica del examen, GitHub-only (sin base de datos).
@@ -16,8 +21,29 @@ function repoName(examSlug: string, username: string): string {
   return `${examSlug}-${username}`;
 }
 
+// Repos creados en paralelo DENTRO de una tanda. La app docente manda las tandas de
+// a una (cada tanda es un request corto que entra en el timeout de Vercel) y marca
+// el ritmo entre tandas; acá solo acotamos la concurrencia (tope de GitHub: 100).
+const CREATE_CONCURRENCY = 8;
+
+/** Corre `fn` sobre `items` con como mucho `concurrency` en vuelo a la vez. */
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      await fn(items[next++]);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+}
+
 export interface StartExamInput {
-  templateRepo: string;
   examName: string;
   usernames: string;
   autoCommitIntervalMinutes: number;
@@ -29,48 +55,108 @@ export interface StartExamInput {
 export interface StartExamResult {
   examName: string;
   org: string;
+  /** Roster completo (usernames en minúscula). La app crea los repos en tandas con esto. */
+  roster: string[];
+}
+
+export interface CreateBatchInput {
+  examName: string;
+  templateRepo: string;
+  usernames: string[];
+}
+
+export interface CreateBatchResult {
   created: { username: string; repoName: string; repoUrl: string }[];
+  /** Alumnos cuyo repo no se pudo crear (crear a mano; salen en rojo en el dashboard). */
+  failed: { username: string; repoName: string; error: string }[];
 }
 
 /**
- * Inicia el examen: genera un repo privado por alumno desde el template e
- * inicializa el control central (`_control/{slug}.json`) con el intervalo y la
- * hora de fin. No se escribe nada dentro del repo del alumno: toda la config del
- * examen vive en el control central (una sola escritura, sin race al crear).
+ * No se pudo escribir el control central (la "partida de nacimiento" del examen):
+ * GitHub no respondió. Trae el archivo exacto para cargarlo a mano en `_control`.
+ */
+export class ExamControlError extends Error {
+  manualControl: { repo: string; path: string; content: string };
+  constructor(manualControl: { repo: string; path: string; content: string }) {
+    super("No se pudo crear el examen: GitHub no respondió. Cargá el control a mano.");
+    this.name = "ExamControlError";
+    this.manualControl = manualControl;
+  }
+}
+
+/**
+ * Crea el examen: escribe SOLO el control central `_control/{slug}.json` (intervalo,
+ * hora de fin, roster completo). Es la "partida de nacimiento" — rápido, una sola
+ * escritura. Si falla, aborta con ExamControlError (que trae el archivo a mano).
+ * Los repos de alumnos NO se crean acá: la app docente los crea por tandas con
+ * `createExamBatch`, así cada request es corto y entra en el timeout de Vercel.
  */
 export async function startExam(input: StartExamInput): Promise<StartExamResult> {
   const slug = sanitizeExamName(input.examName);
   if (!slug) throw new Error("Nombre de examen inválido.");
-  const usernames = parseUsernames(input.usernames);
-  if (usernames.length === 0) throw new Error("No se reconoció ningún usuario.");
+  const roster = parseUsernames(input.usernames);
+  if (roster.length === 0) throw new Error("No se reconoció ningún usuario.");
 
   const org = getOrg();
-  const github = await getGitHubService();
-
-  const created = [];
-  for (const username of usernames) {
-    const name = repoName(slug, username);
-    const repo = await github.generateFromTemplate({
-      org,
-      templateRepo: input.templateRepo,
-      repoName: name,
-      description: `Examen: ${slug}`,
-    });
-    created.push({ username, repoName: repo.name, repoUrl: repo.url });
-  }
-
   const endsAt =
     input.durationMinutes > 0
       ? new Date(Date.now() + input.durationMinutes * 60_000).toISOString()
       : null;
 
-  await setExamControl(slug, {
+  const control: ExamControl = {
     intervalMinutes: input.autoCommitIntervalMinutes,
     endsAt,
     closed: false,
+    roster,
+  };
+  try {
+    await setExamControl(slug, control);
+  } catch {
+    throw new ExamControlError({
+      repo: CONTROL_REPO,
+      path: `${slug}.json`,
+      content: JSON.stringify(control, null, 2) + "\n",
+    });
+  }
+
+  return { examName: slug, org, roster };
+}
+
+/**
+ * Crea los repos de UNA tanda de alumnos desde el template, en paralelo acotado
+ * (CREATE_CONCURRENCY). La app docente la llama repetidamente (una tanda a la vez,
+ * marcando el ritmo entre tandas), de modo que cada request sea corto y entre en
+ * Vercel. Tolera fallos por alumno (→ `failed` → rojo en el dashboard).
+ */
+export async function createExamBatch(input: CreateBatchInput): Promise<CreateBatchResult> {
+  const slug = sanitizeExamName(input.examName);
+  if (!slug) throw new Error("Nombre de examen inválido.");
+  const org = getOrg();
+  const github = await getGitHubService();
+
+  const created: CreateBatchResult["created"] = [];
+  const failed: CreateBatchResult["failed"] = [];
+
+  await runPool(input.usernames, CREATE_CONCURRENCY, async (username) => {
+    const name = repoName(slug, username);
+    try {
+      const repo = await github.generateFromTemplate({
+        org,
+        templateRepo: input.templateRepo,
+        repoName: name,
+        description: `Examen: ${slug}`,
+      });
+      created.push({ username, repoName: repo.name, repoUrl: repo.url });
+    } catch (e) {
+      failed.push({
+        username,
+        repoName: name,
+        error: e instanceof Error ? e.message : "Error al crear el repo",
+      });
+    }
   });
 
-  return { examName: slug, org, created };
+  return { created, failed };
 }
 
 /** Extiende el examen sumando minutos a la hora de fin (o desde ahora si no había). */
@@ -110,12 +196,14 @@ function activityFromMessage(message: string | undefined): ExamActivity {
 export interface DashboardRow {
   username: string;
   repoName: string;
-  repoUrl: string;
+  repoUrl: string | null;
   lastCommitAt: string | null;
   lastCommitIp: string | null;
   activity: ExamActivity;
   /** true si hace más que el intervalo que no commitea (y el examen no está cerrado). */
   late: boolean;
+  /** true si está en el roster pero su repo todavía no existe (crear a mano). */
+  missing: boolean;
 }
 
 export interface DashboardData {
@@ -148,11 +236,29 @@ export async function getDashboard(examName: string): Promise<DashboardData> {
       lastCommitIp: ipFromMessage(last?.message),
       activity: activityFromMessage(last?.message),
       late,
+      missing: false,
     };
   });
 
-  // Atrasados primero (más viejo / sin commit arriba), luego el resto por usuario.
+  // Inscriptos del roster que todavía no tienen repo → en rojo, para crear a mano.
+  const existing = new Set(repos.map((r) => r.name.slice(`${slug}-`.length)));
+  for (const username of control.roster) {
+    if (existing.has(username)) continue;
+    rows.push({
+      username,
+      repoName: `${slug}-${username}`,
+      repoUrl: null,
+      lastCommitAt: null,
+      lastCommitIp: null,
+      activity: "sin_actividad",
+      late: false,
+      missing: true,
+    });
+  }
+
+  // Faltantes (sin repo) primero; luego atrasados; luego el resto por usuario.
   rows.sort((a, b) => {
+    if (a.missing !== b.missing) return a.missing ? -1 : 1;
     if (a.late !== b.late) return a.late ? -1 : 1;
     if (a.late && b.late) {
       const ta = a.lastCommitAt ? new Date(a.lastCommitAt).getTime() : 0;

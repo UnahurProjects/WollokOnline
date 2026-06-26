@@ -190,24 +190,38 @@ export function ExamDashboard({
               {rows.map((r) => (
                 <tr
                   key={r.repoName}
-                  className={`border-t bd ${r.late ? "bg-red-500/10" : ""}`}
+                  className={`border-t bd ${
+                    r.missing ? "bg-red-500/15" : r.late ? "bg-red-500/10" : ""
+                  }`}
                 >
                   <td className="px-3 py-2 font-mono">
-                    {r.late && <span title="Sin commitear hace rato">⚠ </span>}
+                    {r.missing && <span title="Sin repo — crear a mano">✖ </span>}
+                    {r.late && !r.missing && <span title="Sin commitear hace rato">⚠ </span>}
                     {r.username}
                   </td>
                   <td className="px-3 py-2">
-                    <a
-                      href={r.repoUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline opacity-80 hover:opacity-100"
-                    >
-                      {r.repoName}
-                    </a>
+                    {r.repoUrl ? (
+                      <a
+                        href={r.repoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline opacity-80 hover:opacity-100"
+                      >
+                        {r.repoName}
+                      </a>
+                    ) : (
+                      <span
+                        className="font-mono text-red-300"
+                        title="Creá este repo desde el template (Use this template)"
+                      >
+                        {r.repoName} <span className="opacity-60">(crear a mano)</span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    {r.activity === "entregado" ? (
+                    {r.missing ? (
+                      <span className="text-red-300">Falta el repo</span>
+                    ) : r.activity === "entregado" ? (
                       <span className="text-blue-600 dark:text-blue-300">Entregado</span>
                     ) : r.activity === "trabajando" ? (
                       <span className="text-emerald-700 dark:text-emerald-300">

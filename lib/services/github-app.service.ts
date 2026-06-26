@@ -20,6 +20,29 @@ import type { CommitResult, RepoInfo, WorkspaceFile } from "./types";
  */
 const WANTED = /\.(wlk|wtest)$/i;
 
+/**
+ * Reintenta ante un *secondary rate limit* de GitHub (403/429), respetando el
+ * header `Retry-After` si viene; si no, backoff exponencial acotado. Un 403 común
+ * (permisos) NO se reintenta: solo si trae Retry-After o menciona el límite.
+ */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      const status = e?.status;
+      const retryAfter = Number(e?.response?.headers?.["retry-after"]);
+      const msg = String(e?.message ?? "");
+      const isSecondary =
+        status === 429 ||
+        (status === 403 && (retryAfter > 0 || /secondary rate limit|abuse/i.test(msg)));
+      if (!isSecondary || i >= attempts) throw e;
+      const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(60_000, 1000 * 2 ** i);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
+
 export class AppGitHubService implements GitHubService {
   private octokitPromise: Promise<any> | null = null;
 
@@ -57,14 +80,16 @@ export class AppGitHubService implements GitHubService {
     if (existing) return existing;
 
     const octokit = await this.getOctokit();
-    const r = await octokit.rest.repos.createUsingTemplate({
-      template_owner: opts.org,
-      template_repo: opts.templateRepo,
-      owner: opts.org,
-      name: opts.repoName,
-      private: true,
-      description: opts.description,
-    });
+    const r = await withRateLimitRetry<any>(() =>
+      octokit.rest.repos.createUsingTemplate({
+        template_owner: opts.org,
+        template_repo: opts.templateRepo,
+        owner: opts.org,
+        name: opts.repoName,
+        private: true,
+        description: opts.description,
+      }),
+    );
     return { name: r.data.name, url: r.data.html_url, archived: false };
   }
 

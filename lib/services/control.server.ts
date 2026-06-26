@@ -12,6 +12,8 @@ import { getGitHubService } from "./github-integration.service";
  *   duración) y se puede extender. El cliente calcula el contador desde acá; el
  *   server rechaza commits pasada esa hora.
  * - closed: cierre DURO/manual. Si es true, el server rechaza commits ya mismo.
+ * - roster: usernames inscriptos (verdad de quién debería rendir). El dashboard
+ *   marca en rojo los del roster que todavía no tienen repo (crear a mano).
  */
 export const CONTROL_REPO = "_control";
 
@@ -19,9 +21,10 @@ export interface ExamControl {
   intervalMinutes: number;
   endsAt: string | null;
   closed: boolean;
+  roster: string[];
 }
 
-const DEFAULT: ExamControl = { intervalMinutes: 10, endsAt: null, closed: false };
+const DEFAULT: ExamControl = { intervalMinutes: 10, endsAt: null, closed: false, roster: [] };
 
 function controlPath(slug: string): string {
   return `${slug}.json`;
@@ -44,6 +47,9 @@ export async function getExamControl(examName: string): Promise<ExamControl> {
         typeof p.intervalMinutes === "number" ? p.intervalMinutes : DEFAULT.intervalMinutes,
       endsAt: typeof p.endsAt === "string" ? p.endsAt : null,
       closed: !!p.closed,
+      roster: Array.isArray(p.roster)
+        ? p.roster.filter((u: unknown): u is string => typeof u === "string")
+        : [],
     };
   } catch {
     return { ...DEFAULT };
