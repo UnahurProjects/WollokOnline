@@ -246,14 +246,11 @@ export function StartExamForm() {
           {pendingAppend.newUsernames.length > 0 ? (
             <>
               <p className="mt-1 opacity-80">
-                Se agregarían <strong>{pendingAppend.newUsernames.length}</strong> usuario(s)
-                nuevo(s)
+                Se agregarán los <strong>{pendingAppend.newUsernames.length}</strong> usuario(s)
+                que todavía no estaban
                 {pendingAppend.alreadyIn.length > 0 &&
-                  ` (${pendingAppend.alreadyIn.length} ya estaban)`}
-                . <strong>No</strong> se cambia la hora de fin ni el resto del examen.
-              </p>
-              <p className="mt-1 font-mono text-xs opacity-60">
-                {pendingAppend.newUsernames.join(", ")}
+                  ` (${pendingAppend.alreadyIn.length} ya estaban, se ignoran)`}
+                . <strong>No</strong> se cambia la hora de fin ni nada del examen en curso.
               </p>
               <div className="mt-2 flex gap-2">
                 <button
