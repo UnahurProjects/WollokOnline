@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/api";
-import { ExamControlError, startExam } from "@/lib/services/exam.server";
+import { ExamControlError, ExamExistsError, startExam } from "@/lib/services/exam.server";
 
 export async function POST(req: Request) {
   const guard = await requireApiRole("teacher");
@@ -17,10 +17,23 @@ export async function POST(req: Request) {
       usernames: String(body.usernames ?? ""),
       autoCommitIntervalMinutes: Number(body.autoCommitIntervalMinutes) || 10,
       durationMinutes: Number(body.durationMinutes) || 0,
+      confirmAddToExisting: !!body.confirmAddToExisting,
       teacher: guard.session.user.githubUsername,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (e) {
+    if (e instanceof ExamExistsError) {
+      return NextResponse.json(
+        {
+          error: e.message,
+          examExists: e.kind,
+          examName: e.examName,
+          newUsernames: e.newUsernames,
+          alreadyIn: e.alreadyIn,
+        },
+        { status: 409 },
+      );
+    }
     if (e instanceof ExamControlError) {
       return NextResponse.json(
         { error: e.message, manualControl: e.manualControl },

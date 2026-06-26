@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const field =
   "w-full rounded-md border bd bg-black/20 px-3 py-2 text-sm outline-none focus:border-current";
@@ -30,6 +30,11 @@ export function StartExamForm() {
   const [manual, setManual] = useState<{ repo: string; path: string; content: string } | null>(
     null,
   );
+  const [pendingAppend, setPendingAppend] = useState<{
+    examName: string;
+    newUsernames: string[];
+    alreadyIn: string[];
+  } | null>(null);
   const [progress, setProgress] = useState<{
     done: number;
     total: number;
@@ -37,25 +42,65 @@ export function StartExamForm() {
   } | null>(null);
   const [starting, setStarting] = useState(false);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  // Valores del form, guardados al enviar (para reusarlos si hay que confirmar "agregar").
+  const valuesRef = useRef<{
+    examName: string;
+    templateRepo: string;
+    autoCommitIntervalMinutes: number;
+    durationMinutes: number;
+    usernames: string;
+  } | null>(null);
+
+  // Crea los repos en tandas (cada tanda = un request corto), marcando el ritmo.
+  async function createReposInBatches(
+    examName: string,
+    templateRepo: string,
+    usernames: string[],
+  ) {
+    const batches = chunk(usernames, BATCH);
+    let done = 0;
+    let failed = 0;
+    setProgress({ done: 0, total: usernames.length, failed: 0 });
+    for (let b = 0; b < batches.length; b++) {
+      const t0 = Date.now();
+      const res = await fetch("/api/exams/create-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ examName, templateRepo, usernames: batches[b] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "No se pudo crear una tanda de repos");
+      done += batches[b].length;
+      failed += data.failed?.length ?? 0;
+      setProgress({ done, total: usernames.length, failed });
+      // Ritmo: no arrancar la próxima tanda antes de completar el intervalo (≤80/min).
+      if (b < batches.length - 1) {
+        const elapsed = Date.now() - t0;
+        if (elapsed < MIN_BATCH_INTERVAL_MS) await sleep(MIN_BATCH_INTERVAL_MS - elapsed);
+      }
+    }
+    router.push(`/teacher/exam/${examName}`);
+  }
+
+  async function attemptStart(confirmAddToExisting: boolean) {
+    const v = valuesRef.current;
+    if (!v) return;
     setError(null);
     setManual(null);
+    setPendingAppend(null);
     setProgress(null);
     setStarting(true);
-    const fd = new FormData(e.currentTarget);
-    const examName = String(fd.get("examName"));
-    const templateRepo = String(fd.get("templateRepo"));
     try {
-      // 1) Crear el examen: solo el control central con el roster completo.
+      // 1) Crear el examen (o agregar usuarios): escribe solo el control central.
       const startRes = await fetch("/api/exams/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          examName,
-          autoCommitIntervalMinutes: Number(fd.get("autoCommitIntervalMinutes")),
-          durationMinutes: Number(fd.get("durationMinutes")),
-          usernames: String(fd.get("usernames") ?? ""),
+          examName: v.examName,
+          autoCommitIntervalMinutes: v.autoCommitIntervalMinutes,
+          durationMinutes: v.durationMinutes,
+          usernames: v.usernames,
+          confirmAddToExisting,
         }),
       });
       const startData = await startRes.json();
@@ -66,44 +111,51 @@ export function StartExamForm() {
           setStarting(false);
           return;
         }
+        // El examen ya existe y está abierto: pedir confirmación para agregar usuarios.
+        if (startData.examExists === "open") {
+          setPendingAppend({
+            examName: startData.examName,
+            newUsernames: startData.newUsernames ?? [],
+            alreadyIn: startData.alreadyIn ?? [],
+          });
+          setStarting(false);
+          return;
+        }
+        // Ya existe y está cerrado: no se puede agregar.
+        if (startData.examExists === "closed") {
+          setError(
+            `El examen "${startData.examName}" ya existe y está cerrado. Elegí otro nombre.`,
+          );
+          setStarting(false);
+          return;
+        }
         throw new Error(startData.error ?? "No se pudo crear el examen");
       }
 
-      // 2) Crear los repos en tandas, marcando el ritmo entre una y otra.
-      const roster: string[] = startData.roster ?? [];
-      const batches = chunk(roster, BATCH);
-      let done = 0;
-      let failed = 0;
-      setProgress({ done: 0, total: roster.length, failed: 0 });
-      for (let b = 0; b < batches.length; b++) {
-        const t0 = Date.now();
-        const res = await fetch("/api/exams/create-batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            examName: startData.examName,
-            templateRepo,
-            usernames: batches[b],
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "No se pudo crear una tanda de repos");
-        done += batches[b].length;
-        failed += data.failed?.length ?? 0;
-        setProgress({ done, total: roster.length, failed });
-        // Ritmo: no arrancar la próxima tanda antes de completar el intervalo (≤80/min).
-        if (b < batches.length - 1) {
-          const elapsed = Date.now() - t0;
-          if (elapsed < MIN_BATCH_INTERVAL_MS) await sleep(MIN_BATCH_INTERVAL_MS - elapsed);
-        }
+      // 2) Crear los repos que devuelve (todos si es nuevo; solo los nuevos si se agregó).
+      const toCreate: string[] = startData.roster ?? [];
+      if (toCreate.length === 0) {
+        router.push(`/teacher/exam/${startData.examName}`);
+        return;
       }
-
-      // 3) Listo → al dashboard (los que fallaron salen en rojo para crear a mano).
-      router.push(`/teacher/exam/${startData.examName}`);
+      await createReposInBatches(startData.examName, v.templateRepo, toCreate);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
       setStarting(false);
     }
+  }
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    valuesRef.current = {
+      examName: String(fd.get("examName")),
+      templateRepo: String(fd.get("templateRepo")),
+      autoCommitIntervalMinutes: Number(fd.get("autoCommitIntervalMinutes")),
+      durationMinutes: Number(fd.get("durationMinutes")),
+      usernames: String(fd.get("usernames") ?? ""),
+    };
+    attemptStart(false);
   }
 
   return (
@@ -183,6 +235,50 @@ export function StartExamForm() {
           >
             📋 Copiar contenido
           </button>
+        </div>
+      )}
+
+      {pendingAppend && (
+        <div className="rounded-md border border-amber-400/50 bg-amber-400/10 p-3 text-sm">
+          <p className="font-semibold text-amber-300">
+            El examen &quot;{pendingAppend.examName}&quot; ya existe y está abierto.
+          </p>
+          {pendingAppend.newUsernames.length > 0 ? (
+            <>
+              <p className="mt-1 opacity-80">
+                Se agregarían <strong>{pendingAppend.newUsernames.length}</strong> usuario(s)
+                nuevo(s)
+                {pendingAppend.alreadyIn.length > 0 &&
+                  ` (${pendingAppend.alreadyIn.length} ya estaban)`}
+                . <strong>No</strong> se cambia la hora de fin ni el resto del examen.
+              </p>
+              <p className="mt-1 font-mono text-xs opacity-60">
+                {pendingAppend.newUsernames.join(", ")}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => attemptStart(true)}
+                  disabled={starting}
+                  className="rounded-md bg-amber-500 px-3 py-1 text-xs font-semibold text-black hover:opacity-90 disabled:opacity-50"
+                >
+                  Sí, agregar al examen abierto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingAppend(null)}
+                  className="rounded-md border bd px-3 py-1 text-xs hoverable"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="mt-1 opacity-80">
+              Todos los usuarios que pusiste ya estaban en este examen. No hay nada para
+              agregar.
+            </p>
+          )}
         </div>
       )}
 

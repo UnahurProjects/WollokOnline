@@ -30,7 +30,8 @@ function controlPath(slug: string): string {
   return `${slug}.json`;
 }
 
-export async function getExamControl(examName: string): Promise<ExamControl> {
+/** Lee el control si el examen YA existe; devuelve `null` si no existe todavía. */
+export async function readExamControl(examName: string): Promise<ExamControl | null> {
   const slug = sanitizeExamName(examName);
   const github = await getGitHubService();
   let txt: string | null = null;
@@ -39,7 +40,7 @@ export async function getExamControl(examName: string): Promise<ExamControl> {
   } catch {
     txt = null;
   }
-  if (!txt) return { ...DEFAULT };
+  if (!txt) return null;
   try {
     const p = JSON.parse(txt);
     return {
@@ -52,8 +53,12 @@ export async function getExamControl(examName: string): Promise<ExamControl> {
         : [],
     };
   } catch {
-    return { ...DEFAULT };
+    return null;
   }
+}
+
+export async function getExamControl(examName: string): Promise<ExamControl> {
+  return (await readExamControl(examName)) ?? { ...DEFAULT };
 }
 
 export async function setExamControl(

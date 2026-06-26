@@ -4,6 +4,7 @@ import { getGitHubService } from "./github-integration.service";
 import {
   CONTROL_REPO,
   getExamControl,
+  readExamControl,
   setExamControl,
   type ExamControl,
 } from "./control.server";
@@ -49,14 +50,37 @@ export interface StartExamInput {
   autoCommitIntervalMinutes: number;
   /** Duración del examen en minutos (0 = sin límite de tiempo). */
   durationMinutes: number;
+  /** Si el examen ya existe y está abierto, confirma agregar usuarios (no pisa el control). */
+  confirmAddToExisting?: boolean;
   teacher: string;
 }
 
 export interface StartExamResult {
   examName: string;
   org: string;
-  /** Roster completo (usernames en minúscula). La app crea los repos en tandas con esto. */
+  /** Usernames a CREAR ahora (examen nuevo = todos; agregar = solo los nuevos). La app los crea en tandas. */
   roster: string[];
+  /** "created" = examen nuevo; "appended" = se agregaron usuarios a uno abierto (sin tocar la hora). */
+  mode: "created" | "appended";
+}
+
+/**
+ * El examen ya existe. La app decide: si está ABIERTO, ofrece agregar usuarios
+ * (sin tocar la hora de fin); si está CERRADO, pide elegir otro nombre.
+ */
+export class ExamExistsError extends Error {
+  kind: "open" | "closed";
+  examName: string;
+  newUsernames: string[];
+  alreadyIn: string[];
+  constructor(kind: "open" | "closed", examName: string, newUsernames: string[], alreadyIn: string[]) {
+    super(`El examen "${examName}" ya existe (${kind === "closed" ? "cerrado" : "abierto"}).`);
+    this.name = "ExamExistsError";
+    this.kind = kind;
+    this.examName = examName;
+    this.newUsernames = newUsernames;
+    this.alreadyIn = alreadyIn;
+  }
 }
 
 export interface CreateBatchInput {
@@ -85,29 +109,52 @@ export class ExamControlError extends Error {
 }
 
 /**
- * Crea el examen: escribe SOLO el control central `_control/{slug}.json` (intervalo,
- * hora de fin, roster completo). Es la "partida de nacimiento" — rápido, una sola
- * escritura. Si falla, aborta con ExamControlError (que trae el archivo a mano).
- * Los repos de alumnos NO se crean acá: la app docente los crea por tandas con
- * `createExamBatch`, así cada request es corto y entra en el timeout de Vercel.
+ * Crea el examen o AGREGA usuarios a uno existente. Escribe SOLO el control central
+ * `_control/{slug}.json` (intervalo, hora de fin, roster). Los repos de alumnos NO se
+ * crean acá: la app docente los crea por tandas con `createExamBatch`.
+ *
+ * Si el examen YA existe:
+ *  - cerrado → ExamExistsError("closed"): no se puede agregar, elegir otro nombre.
+ *  - abierto y sin confirmar → ExamExistsError("open"): la app pide confirmación.
+ *  - abierto y confirmado → agrega los usuarios nuevos al roster SIN tocar la hora de
+ *    fin ni el intervalo (no se pisa el control); devuelve solo los nuevos a crear.
  */
 export async function startExam(input: StartExamInput): Promise<StartExamResult> {
   const slug = sanitizeExamName(input.examName);
   if (!slug) throw new Error("Nombre de examen inválido.");
-  const roster = parseUsernames(input.usernames);
-  if (roster.length === 0) throw new Error("No se reconoció ningún usuario.");
+  const requested = parseUsernames(input.usernames);
+  if (requested.length === 0) throw new Error("No se reconoció ningún usuario.");
 
   const org = getOrg();
+  const existing = await readExamControl(slug);
+
+  // ── El examen YA existe ────────────────────────────────────────────────────
+  if (existing) {
+    if (existing.closed) {
+      throw new ExamExistsError("closed", slug, [], []);
+    }
+    const alreadyIn = requested.filter((u) => existing.roster.includes(u));
+    const newUsernames = requested.filter((u) => !existing.roster.includes(u));
+    if (!input.confirmAddToExisting) {
+      throw new ExamExistsError("open", slug, newUsernames, alreadyIn);
+    }
+    // Confirmado: agregar al roster SIN tocar endsAt / intervalo / closed.
+    if (newUsernames.length > 0) {
+      await setExamControl(slug, { roster: [...existing.roster, ...newUsernames] });
+    }
+    return { examName: slug, org, roster: newUsernames, mode: "appended" };
+  }
+
+  // ── Examen nuevo ───────────────────────────────────────────────────────────
   const endsAt =
     input.durationMinutes > 0
       ? new Date(Date.now() + input.durationMinutes * 60_000).toISOString()
       : null;
-
   const control: ExamControl = {
     intervalMinutes: input.autoCommitIntervalMinutes,
     endsAt,
     closed: false,
-    roster,
+    roster: requested,
   };
   try {
     await setExamControl(slug, control);
@@ -119,7 +166,7 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
     });
   }
 
-  return { examName: slug, org, roster };
+  return { examName: slug, org, roster: requested, mode: "created" };
 }
 
 /**
