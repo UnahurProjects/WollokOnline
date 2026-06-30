@@ -20,6 +20,8 @@ export interface StudentWorkspace {
   repoUrl: string;
   autoCommitIntervalMinutes: number;
   statementImageUrl: string | null;
+  /** Enunciado en markdown (texto reflowable) o null. Excluyente con statementImageUrl. */
+  statementMarkdown: string | null;
   /** Solo .wlk/.wtest (el alumno no ve .exam/). */
   files: WorkspaceFile[];
   lastCommitAt: string | null;
@@ -65,16 +67,22 @@ export async function getStudentWorkspace(
   const interval = control.intervalMinutes;
 
   const last = await github.getLastCommit({ org, repoName: name });
-  const statementPath = await github.findStatementPath({ org, repoName: name });
+  const statement = await github.findStatement({ org, repoName: name });
+  const statementMarkdown =
+    statement?.kind === "markdown"
+      ? await github.getFileText({ org, repoName: name }, statement.path)
+      : null;
 
   return {
     examName: slug,
     repoName: name,
     repoUrl: repo.url,
     autoCommitIntervalMinutes: interval,
-    statementImageUrl: statementPath
-      ? `/api/statement?exam=${encodeURIComponent(slug)}`
-      : null,
+    statementImageUrl:
+      statement?.kind === "image"
+        ? `/api/statement?exam=${encodeURIComponent(slug)}`
+        : null,
+    statementMarkdown,
     files: all.filter((f) => /\.(wlk|wtest)$/i.test(f.path)),
     lastCommitAt: last?.committedAt ?? null,
     endsAt: control.endsAt,

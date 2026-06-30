@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       usernames: String(body.usernames ?? ""),
       autoCommitIntervalMinutes: Number(body.autoCommitIntervalMinutes) || 10,
       durationMinutes: Number(body.durationMinutes) || 0,
+      templateRepo: String(body.templateRepo ?? ""),
       confirmAddToExisting: !!body.confirmAddToExisting,
       teacher: guard.session.user.githubUsername,
     });

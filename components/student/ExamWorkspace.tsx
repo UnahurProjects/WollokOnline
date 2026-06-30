@@ -23,6 +23,7 @@ interface WorkspaceResponse {
   repoUrl: string;
   autoCommitIntervalMinutes: number;
   statementImageUrl: string | null;
+  statementMarkdown: string | null;
   files: LocalFile[];
   lastCommitAt: string | null;
   endsAt: string | null;
@@ -566,7 +567,7 @@ export function ExamWorkspace({
               )}
             </svg>
           </button>
-          {remote?.statementImageUrl && (
+          {(remote?.statementImageUrl || remote?.statementMarkdown) && (
             <button
               onClick={() => setShowStatement((v) => !v)}
               title={showStatement ? "Ocultar enunciado" : "Mostrar enunciado"}
@@ -703,7 +704,7 @@ export function ExamWorkspace({
           </div>
         </section>
 
-        {showStatement && remote?.statementImageUrl && (
+        {showStatement && (remote?.statementImageUrl || remote?.statementMarkdown) && (
           <>
             <div
               onPointerDown={onStatementResizeStart}
@@ -712,6 +713,7 @@ export function ExamWorkspace({
             />
             <StatementPanel
               imageUrl={remote.statementImageUrl}
+              markdown={remote.statementMarkdown}
               width={statementWidth}
               onClose={() => setShowStatement(false)}
             />

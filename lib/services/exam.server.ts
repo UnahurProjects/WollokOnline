@@ -50,6 +50,8 @@ export interface StartExamInput {
   autoCommitIntervalMinutes: number;
   /** Duración del examen en minutos (0 = sin límite de tiempo). */
   durationMinutes: number;
+  /** Template usado. Se guarda en el control para poder verificarlo después. */
+  templateRepo: string;
   /** Si el examen ya existe y está abierto, confirma agregar usuarios (no pisa el control). */
   confirmAddToExisting?: boolean;
   teacher: string;
@@ -93,6 +95,23 @@ export interface CreateBatchResult {
   created: { username: string; repoName: string; repoUrl: string }[];
   /** Alumnos cuyo repo no se pudo crear (crear a mano; salen en rojo en el dashboard). */
   failed: { username: string; repoName: string; error: string }[];
+}
+
+/**
+ * El template indicado no existe en la org (o la App no tiene acceso). Suele ser
+ * un nombre mal tipeado. Mensaje claro para que el docente lo corrija.
+ */
+export class TemplateNotFoundError extends Error {
+  templateRepo: string;
+  constructor(templateRepo: string, org: string) {
+    super(
+      `El template "${templateRepo}" no existe en la organización ${org}. ` +
+        "Revisá el nombre exacto (distingue mayúsculas/minúsculas) y que el repo " +
+        "esté marcado como template y la GitHub App tenga acceso.",
+    );
+    this.name = "TemplateNotFoundError";
+    this.templateRepo = templateRepo;
+  }
 }
 
 /**
@@ -156,6 +175,9 @@ export async function startExam(input: StartExamInput): Promise<StartExamResult>
     closed: false,
     roster: requested,
     startedAt: new Date().toISOString(),
+    templateRepo: input.templateRepo || null,
+    durationMinutes: input.durationMinutes,
+    createdBy: input.teacher || null,
   };
   try {
     await setExamControl(slug, control);
@@ -181,6 +203,11 @@ export async function createExamBatch(input: CreateBatchInput): Promise<CreateBa
   if (!slug) throw new Error("Nombre de examen inválido.");
   const org = getOrg();
   const github = await getGitHubService();
+
+  // Verificá el template UNA vez antes de la tanda: si no existe, error claro
+  // (en vez de "no se pudo crear ningún repo") y no se intenta nada.
+  const template = await github.getRepo({ org, repoName: input.templateRepo });
+  if (!template) throw new TemplateNotFoundError(input.templateRepo, org);
 
   const created: CreateBatchResult["created"] = [];
   const failed: CreateBatchResult["failed"] = [];
