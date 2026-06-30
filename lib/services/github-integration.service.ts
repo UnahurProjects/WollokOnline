@@ -52,6 +52,8 @@ export interface GitHubService {
   ): Promise<{ data: Uint8Array; contentType: string } | null>;
   /** Lee el texto de un archivo (o null si no existe). Para el repo de control. */
   getFileText(ref: RepoRef, path: string): Promise<string | null>;
+  /** Lista los paths de todos los archivos del repo (para enumerar los exámenes en `_control`). */
+  listFiles(ref: RepoRef): Promise<string[]>;
   /** Crea el repo si no existe (con commit inicial). Para el repo de control. */
   ensureRepo(opts: { org: string; name: string; description?: string }): Promise<void>;
   /** Último commit de varios repos en pocas llamadas (GraphQL en la impl real). */
@@ -244,6 +246,11 @@ export class MockGitHubService implements GitHubService {
   async getFileText(ref: RepoRef, path: string): Promise<string | null> {
     const r = this.repos.get(this.key(ref.org, ref.repoName));
     return r?.files.get(path) ?? null;
+  }
+
+  async listFiles(ref: RepoRef): Promise<string[]> {
+    const r = this.repos.get(this.key(ref.org, ref.repoName));
+    return r ? [...r.files.keys()] : [];
   }
 
   async ensureRepo(opts: { org: string; name: string }): Promise<void> {
