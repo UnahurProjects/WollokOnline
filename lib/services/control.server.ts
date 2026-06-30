@@ -25,6 +25,10 @@ export interface ExamControl {
   /** Cuándo arrancó el examen (ISO). Da una gracia inicial: un alumno sin commits no
    *  cuenta como "atrasado" hasta que pasa un intervalo desde acá. */
   startedAt: string | null;
+  /** Config con la que se creó el examen (para verificar/diagnosticar después). */
+  templateRepo: string | null;
+  durationMinutes: number | null;
+  createdBy: string | null;
 }
 
 const DEFAULT: ExamControl = {
@@ -33,6 +37,9 @@ const DEFAULT: ExamControl = {
   closed: false,
   roster: [],
   startedAt: null,
+  templateRepo: null,
+  durationMinutes: null,
+  createdBy: null,
 };
 
 function controlPath(slug: string): string {
@@ -61,6 +68,9 @@ export async function readExamControl(examName: string): Promise<ExamControl | n
         ? p.roster.filter((u: unknown): u is string => typeof u === "string")
         : [],
       startedAt: typeof p.startedAt === "string" ? p.startedAt : null,
+      templateRepo: typeof p.templateRepo === "string" ? p.templateRepo : null,
+      durationMinutes: typeof p.durationMinutes === "number" ? p.durationMinutes : null,
+      createdBy: typeof p.createdBy === "string" ? p.createdBy : null,
     };
   } catch {
     return null;

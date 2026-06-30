@@ -99,6 +99,7 @@ export function StartExamForm() {
           examName: v.examName,
           autoCommitIntervalMinutes: v.autoCommitIntervalMinutes,
           durationMinutes: v.durationMinutes,
+          templateRepo: v.templateRepo,
           usernames: v.usernames,
           confirmAddToExisting,
         }),

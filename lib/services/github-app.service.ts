@@ -4,11 +4,13 @@ import { resolve } from "node:path";
 import { App } from "octokit";
 import {
   IMAGE_CONTENT_TYPES,
+  pickStatement,
   pickStatementPath,
   type CommitOptions,
   type GenerateOptions,
   type GitHubService,
   type RepoRef,
+  type StatementRef,
 } from "./github-integration.service";
 import type { CommitResult, RepoInfo, WorkspaceFile } from "./types";
 
@@ -248,9 +250,9 @@ export class AppGitHubService implements GitHubService {
     return (tree.data.tree as any[]).filter((e) => e.type === "blob").map((e) => e.path);
   }
 
-  async findStatementPath(ref: RepoRef): Promise<string | null> {
+  async findStatement(ref: RepoRef): Promise<StatementRef | null> {
     const octokit = await this.getOctokit();
-    return pickStatementPath(await this.listAllPaths(octokit, ref.org, ref.repoName));
+    return pickStatement(await this.listAllPaths(octokit, ref.org, ref.repoName));
   }
 
   async getStatementImage(

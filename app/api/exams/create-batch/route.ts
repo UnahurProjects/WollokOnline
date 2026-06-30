@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/api";
-import { createExamBatch } from "@/lib/services/exam.server";
+import { createExamBatch, TemplateNotFoundError } from "@/lib/services/exam.server";
 
 // Una tanda corta de creación de repos. La app docente las manda de a una marcando
 // el ritmo; cada request debe terminar dentro del límite de tiempo de Vercel.
@@ -26,6 +26,12 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(result);
   } catch (e) {
+    if (e instanceof TemplateNotFoundError) {
+      return NextResponse.json(
+        { error: e.message, templateMissing: true, templateRepo: e.templateRepo },
+        { status: 404 },
+      );
+    }
     const message = e instanceof Error ? e.message : "Error al crear los repos";
     return NextResponse.json({ error: message }, { status: 400 });
   }

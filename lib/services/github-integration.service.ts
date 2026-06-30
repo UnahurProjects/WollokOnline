@@ -44,8 +44,8 @@ export interface GitHubService {
   archiveRepo(ref: RepoRef): Promise<void>;
   /** Lista repos de la org cuyo nombre empieza con el prefijo (ej. "parcial2-"). */
   listRepos(opts: { org: string; prefix: string }): Promise<RepoInfo[]>;
-  /** Path de la imagen de enunciado en el repo (o null si no hay). */
-  findStatementPath(ref: RepoRef): Promise<string | null>;
+  /** Enunciado del repo (imagen o markdown), o null si no hay. */
+  findStatement(ref: RepoRef): Promise<StatementRef | null>;
   /** Bytes de la imagen de enunciado (o null si no hay). */
   getStatementImage(
     ref: RepoRef,
@@ -79,6 +79,44 @@ export function pickStatementPath(paths: string[]): string | null {
   });
   if (imgs.length === 0) return null;
   return imgs.find((p) => /statement|enunciado|readme/i.test(p)) ?? imgs[0];
+}
+
+/** Tipo de enunciado: imagen (servida como `<img>`) o markdown (texto reflowable). */
+export type StatementKind = "image" | "markdown";
+export interface StatementRef {
+  path: string;
+  kind: StatementKind;
+}
+
+function isImagePath(p: string): boolean {
+  const ext = p.split(".").pop()?.toLowerCase() ?? "";
+  return !!IMAGE_CONTENT_TYPES[ext];
+}
+
+/**
+ * Elige el enunciado entre los paths del repo. El enunciado se llama `README`
+ * (puede haber imagen, `.md`, o ambas). Prioridad: IMAGEN antes que markdown.
+ *   1) un README en imagen (`README.png/jpg/…`)  → imagen;
+ *   2) si no, un README en markdown (`README.md`) → markdown.
+ * Como red de seguridad (exámenes viejos con otro nombre): igual prioriza
+ * cualquier imagen y, en última instancia, cualquier `.md`.
+ */
+export function pickStatement(paths: string[]): StatementRef | null {
+  const isMd = (p: string) => /\.md$/i.test(p);
+  const isStatementName = (p: string) => /readme|enunciado|statement/i.test(p);
+
+  const imgs = paths.filter(isImagePath);
+  const mds = paths.filter(isMd);
+
+  const namedImg = imgs.find(isStatementName);
+  if (namedImg) return { path: namedImg, kind: "image" };
+
+  const namedMd = mds.find(isStatementName);
+  if (namedMd) return { path: namedMd, kind: "markdown" };
+
+  if (imgs.length) return { path: imgs[0], kind: "image" };
+  if (mds.length) return { path: mds[0], kind: "markdown" };
+  return null;
 }
 
 // ── Mock en memoria ─────────────────────────────────────────────────────────
@@ -193,9 +231,9 @@ export class MockGitHubService implements GitHubService {
       .map((r) => this.toInfo(r));
   }
 
-  async findStatementPath(ref: RepoRef): Promise<string | null> {
+  async findStatement(ref: RepoRef): Promise<StatementRef | null> {
     const r = this.repos.get(this.key(ref.org, ref.repoName));
-    return r ? pickStatementPath([...r.files.keys()]) : null;
+    return r ? pickStatement([...r.files.keys()]) : null;
   }
 
   async getStatementImage(): Promise<{ data: Uint8Array; contentType: string } | null> {
