@@ -2,6 +2,7 @@ import { signOut } from "@/auth";
 import { requireRole } from "@/lib/auth/session";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OpenDashboardForm } from "@/components/teacher/OpenDashboardForm";
+import { OpenExamsList } from "@/components/teacher/OpenExamsList";
 import { StartExamForm } from "@/components/teacher/StartExamForm";
 
 export default async function TeacherHome() {
@@ -34,8 +35,12 @@ export default async function TeacherHome() {
         <StartExamForm />
       </section>
 
+      <section className="rounded-lg border bd surface p-5">
+        <OpenExamsList />
+      </section>
+
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Ver un examen (en curso o cerrado)</h2>
+        <h2 className="text-lg font-semibold">Ver un examen por nombre</h2>
         <OpenDashboardForm />
       </section>
     </main>

@@ -276,6 +276,16 @@ export class AppGitHubService implements GitHubService {
     };
   }
 
+  async listFiles(ref: RepoRef): Promise<string[]> {
+    const octokit = await this.getOctokit();
+    try {
+      return await this.listAllPaths(octokit, ref.org, ref.repoName);
+    } catch (e: any) {
+      if (e?.status === 404 || e?.status === 409) return []; // repo inexistente o vacío
+      throw e;
+    }
+  }
+
   async getFileText(ref: RepoRef, path: string): Promise<string | null> {
     const octokit = await this.getOctokit();
     try {

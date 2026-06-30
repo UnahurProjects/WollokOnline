@@ -20,7 +20,7 @@ export function ExamDashboard({
   const [rows, setRows] = useState<DashboardRow[]>(initial.rows);
   const [control, setControl] = useState(initial.control);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<null | "extend" | "close">(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -59,24 +59,27 @@ export function ExamDashboard({
     }
   }
 
-  async function action(fn: () => Promise<Response>) {
-    setBusy(true);
+  // Una acción a la vez: marca cuál está en curso (para el texto del botón) y
+  // bloquea el resto hasta terminar (evita doble click / pisar acciones).
+  async function action(kind: "extend" | "close", fn: () => Promise<Response>) {
+    if (busyAction) return;
+    setBusyAction(kind);
     setError(null);
     try {
       const res = await fn();
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo completar la acción");
       await refresh();
+      setConfirmClose(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
     } finally {
-      setBusy(false);
-      setConfirmClose(false);
+      setBusyAction(null);
     }
   }
 
   const extend = () =>
-    action(() =>
+    action("extend", () =>
       fetch("/api/exams/extend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,13 +87,16 @@ export function ExamDashboard({
       }),
     );
   const closeExam = () =>
-    action(() =>
+    action("close", () =>
       fetch("/api/exams/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ examName }),
       }),
     );
+
+  // Cualquier operación en curso bloquea todos los controles.
+  const anyBusy = loading || busyAction !== null;
 
   const fmt = (ms: number) => {
     const s = Math.ceil(ms / 1000);
@@ -108,7 +114,7 @@ export function ExamDashboard({
         <div className="flex items-center gap-2">
           <button
             onClick={refresh}
-            disabled={loading}
+            disabled={anyBusy}
             className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable disabled:opacity-50"
           >
             {loading ? "Actualizando…" : "Actualizar"}
@@ -136,24 +142,25 @@ export function ExamDashboard({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={extend}
-              disabled={busy}
+              disabled={anyBusy}
               className="rounded-md border border-amber-400/50 px-3 py-1.5 text-sm text-amber-300 transition hover:bg-amber-400/10 disabled:opacity-50"
             >
-              Extender +{EXTEND_MIN} min
+              {busyAction === "extend" ? "Extendiendo…" : `Extender +${EXTEND_MIN} min`}
             </button>
             {confirmClose ? (
               <span className="flex items-center gap-2">
                 <span className="text-sm opacity-70">¿Finalizar de verdad?</span>
                 <button
                   onClick={closeExam}
-                  disabled={busy}
+                  disabled={anyBusy}
                   className="rounded-md bg-red-500 px-3 py-1.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
                 >
-                  Confirmar
+                  {busyAction === "close" ? "Finalizando…" : "Confirmar"}
                 </button>
                 <button
                   onClick={() => setConfirmClose(false)}
-                  className="rounded-md border bd px-3 py-1.5 text-sm hoverable"
+                  disabled={anyBusy}
+                  className="rounded-md border bd px-3 py-1.5 text-sm hoverable disabled:opacity-50"
                 >
                   No
                 </button>
@@ -161,7 +168,8 @@ export function ExamDashboard({
             ) : (
               <button
                 onClick={() => setConfirmClose(true)}
-                className="rounded-md border border-red-500/40 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/10"
+                disabled={anyBusy}
+                className="rounded-md border border-red-500/40 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-50"
               >
                 Finalizar examen
               </button>
@@ -169,6 +177,14 @@ export function ExamDashboard({
           </div>
         )}
       </div>
+
+      {busyAction && (
+        <p className="text-sm text-amber-300">
+          {busyAction === "extend"
+            ? "Extendiendo el tiempo… esperá, no cierres ni recargues."
+            : "Finalizando el examen… esperá, no cierres ni recargues."}
+        </p>
+      )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

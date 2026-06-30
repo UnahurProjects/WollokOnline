@@ -81,6 +81,49 @@ export async function getExamControl(examName: string): Promise<ExamControl> {
   return (await readExamControl(examName)) ?? { ...DEFAULT };
 }
 
+/** Resumen liviano de un examen para listarlos (sin traer el roster completo). */
+export interface ExamSummary {
+  slug: string;
+  closed: boolean;
+  endsAt: string | null;
+  startedAt: string | null;
+  rosterCount: number;
+  createdBy: string | null;
+}
+
+/**
+ * Lista todos los exámenes (un `{slug}.json` por examen en el repo `_control`).
+ * Lee cada archivo de control; pensado para una cantidad razonable de exámenes.
+ */
+export async function listExams(): Promise<ExamSummary[]> {
+  const github = await getGitHubService();
+  let paths: string[];
+  try {
+    paths = await github.listFiles({ org: getOrg(), repoName: CONTROL_REPO });
+  } catch {
+    return [];
+  }
+  const slugs = paths
+    .filter((p) => /\.json$/i.test(p) && !p.includes("/"))
+    .map((p) => p.replace(/\.json$/i, ""));
+
+  const summaries = await Promise.all(
+    slugs.map(async (slug): Promise<ExamSummary | null> => {
+      const c = await readExamControl(slug);
+      if (!c) return null;
+      return {
+        slug,
+        closed: c.closed,
+        endsAt: c.endsAt,
+        startedAt: c.startedAt,
+        rosterCount: c.roster.length,
+        createdBy: c.createdBy,
+      };
+    }),
+  );
+  return summaries.filter((s): s is ExamSummary => s !== null);
+}
+
 export async function setExamControl(
   examName: string,
   patch: Partial<ExamControl>,
