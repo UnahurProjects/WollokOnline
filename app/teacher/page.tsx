@@ -1,8 +1,7 @@
+import Link from "next/link";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/auth/session";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { OpenDashboardForm } from "@/components/teacher/OpenDashboardForm";
-import { OpenExamsList } from "@/components/teacher/OpenExamsList";
 import { StartExamForm } from "@/components/teacher/StartExamForm";
 
 export default async function TeacherHome() {
@@ -35,13 +34,19 @@ export default async function TeacherHome() {
         <StartExamForm />
       </section>
 
-      <section className="rounded-lg border bd surface p-5">
-        <OpenExamsList />
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Ver un examen por nombre</h2>
-        <OpenDashboardForm />
+      <section className="flex items-center justify-between gap-3 rounded-lg border bd surface p-5">
+        <div>
+          <h2 className="text-lg font-semibold">Ver exámenes</h2>
+          <p className="text-sm opacity-60">
+            Abrir el dashboard de un parcial (por nombre o buscando los abiertos).
+          </p>
+        </div>
+        <Link
+          href="/teacher/dashboard"
+          className="shrink-0 rounded-md bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:opacity-90"
+        >
+          Ir al dashboard →
+        </Link>
       </section>
     </main>
   );

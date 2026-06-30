@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/session";
 import { getDashboard } from "@/lib/services/exam.server";
 import { sanitizeExamName } from "@/lib/services/exam.service";
 import { ExamDashboard } from "@/components/teacher/ExamDashboard";
+import { OpenDashboardForm } from "@/components/teacher/OpenDashboardForm";
 import type { DashboardData } from "@/lib/services/exam.server";
 
 export default async function ExamDashboardPage({
@@ -24,10 +25,14 @@ export default async function ExamDashboardPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-10">
-      <div className="flex items-center gap-3">
-        <Link href="/teacher" className="text-sm opacity-60 hover:opacity-100">
-          ← Volver
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/teacher/dashboard" className="text-sm opacity-60 hover:opacity-100">
+          ← Dashboard
         </Link>
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase opacity-50">Ver otro parcial</span>
+          <OpenDashboardForm />
+        </div>
       </div>
 
       <header>
