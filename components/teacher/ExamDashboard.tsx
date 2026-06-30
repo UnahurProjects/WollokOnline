@@ -115,8 +115,11 @@ export function ExamDashboard({
           <button
             onClick={refresh}
             disabled={anyBusy}
-            className="rounded-md border bd px-3 py-1.5 text-sm transition hoverable disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
           >
+            <span aria-hidden className={loading ? "animate-spin" : ""}>
+              ↻
+            </span>
             {loading ? "Actualizando…" : "Actualizar"}
           </button>
           {control.closed ? (

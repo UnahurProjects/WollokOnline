@@ -56,8 +56,11 @@ export function OpenExamsList() {
         <button
           onClick={() => void load()}
           disabled={loading}
-          className="rounded-md border bd px-2.5 py-1 text-xs transition hoverable disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
         >
+          <span aria-hidden className={loading ? "animate-spin" : ""}>
+            ↻
+          </span>
           {loading ? "Cargando…" : "Actualizar"}
         </button>
       </div>
