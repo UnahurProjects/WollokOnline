@@ -7,6 +7,7 @@ import {
   type RunTestsResult,
   type WollokFile,
 } from "@/lib/wollok/runner";
+import { WollokReplInput } from "./WollokReplInput";
 
 type Tab = "tests" | "repl";
 
@@ -32,9 +33,6 @@ export function WollokConsole({ getFiles }: { getFiles: () => WollokFile[] }) {
   const [replReady, setReplReady] = useState(false);
   const [replBusy, setReplBusy] = useState(false);
   const [lines, setLines] = useState<ReplLine[]>([]); // más nuevo primero
-  const [input, setInput] = useState("");
-  const [history, setHistory] = useState<string[]>([]); // viejo → nuevo
-  const [histIdx, setHistIdx] = useState<number | null>(null);
 
   async function onRunTests() {
     setRunning(true);
@@ -67,37 +65,11 @@ export function WollokConsole({ getFiles }: { getFiles: () => WollokFile[] }) {
     }
   }
 
-  async function onSubmitLine(e: React.FormEvent) {
-    e.preventDefault();
-    const line = input.trim();
-    if (!line) return;
-    setInput("");
-    setHistory((h) => [...h, line]);
-    setHistIdx(null);
+  async function onSubmitLine(line: string) {
+    if (replBusy) return;
     if (!replRef.current) await ensureRepl();
     const { output, errored } = replRef.current!.evaluate(line);
     setLines((prev) => [{ input: line, output, errored }, ...prev]); // nuevo arriba
-  }
-
-  function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (history.length === 0) return;
-      const idx = histIdx === null ? history.length - 1 : Math.max(0, histIdx - 1);
-      setHistIdx(idx);
-      setInput(history[idx]);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (histIdx === null) return;
-      const idx = histIdx + 1;
-      if (idx >= history.length) {
-        setHistIdx(null);
-        setInput("");
-      } else {
-        setHistIdx(idx);
-        setInput(history[idx]);
-      }
-    }
   }
 
   return (
@@ -159,29 +131,20 @@ export function WollokConsole({ getFiles }: { getFiles: () => WollokFile[] }) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* Input arriba */}
-          <form
-            onSubmit={onSubmitLine}
-            className="flex items-center gap-2 border-b bd px-3 py-2"
-          >
+          {/* Input arriba (Monaco de una línea: autocompletado + historial con ↑/↓) */}
+          <div className="flex items-center gap-2 border-b bd px-3 py-2">
             <span className="font-mono text-sm opacity-50">&gt;</span>
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onInputKeyDown}
-              placeholder="ej: pepita.energia()   (↑ para comandos anteriores)"
-              className="flex-1 bg-transparent font-mono text-sm outline-none"
-            />
+            <WollokReplInput onSubmit={onSubmitLine} disabled={replBusy} />
             <button
               type="button"
               onClick={() => ensureRepl(true)}
               disabled={replBusy}
-              className="rounded-md border bd px-3 py-1 text-sm transition hoverable disabled:opacity-50"
+              className="shrink-0 rounded-md border bd px-3 py-1 text-sm transition hoverable disabled:opacity-50"
               title="Recarga el código actual en la consola"
             >
               {replBusy ? "…" : replReady ? "Reiniciar" : "Iniciar"}
             </button>
-          </form>
+          </div>
           {/* Resultados debajo (más nuevo arriba) */}
           <div className="min-h-0 flex-1 overflow-auto px-3 py-2 font-mono text-sm">
             {lines.length === 0 && (
