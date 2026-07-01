@@ -302,11 +302,14 @@ export async function getDashboard(examName: string): Promise<DashboardData> {
   const rows: DashboardRow[] = repos.map((r) => {
     const last = lasts[r.name] ?? null;
     const lastAt = last?.committedAt ?? null;
-    // "Atrasado" (rojo) = examen abierto Y:
+    const activity = activityFromMessage(last?.message);
+    // "Atrasado" (rojo) = examen abierto, NO entregado, Y:
     //  - commiteó pero hace más que el intervalo, o
     //  - nunca commiteó y ya pasó un intervalo desde que arrancó (gracia inicial).
+    // Si ya entregó, no tiene sentido marcarlo: no se revisa su último commit.
     const late =
       !control.closed &&
+      activity !== "entregado" &&
       (lastAt
         ? now - new Date(lastAt).getTime() > lateMs
         : startedMs !== null && now - startedMs > lateMs);
@@ -316,7 +319,7 @@ export async function getDashboard(examName: string): Promise<DashboardData> {
       repoUrl: r.url,
       lastCommitAt: lastAt,
       lastCommitIp: ipFromMessage(last?.message),
-      activity: activityFromMessage(last?.message),
+      activity,
       late,
       missing: false,
     };
@@ -338,11 +341,19 @@ export async function getDashboard(examName: string): Promise<DashboardData> {
     });
   }
 
-  // Faltantes (sin repo) primero; luego atrasados; luego el resto por usuario.
+  // Orden por grupos: ROJO arriba (sin repo / atrasado), TRABAJANDO al medio,
+  // ENTREGADO abajo. Dentro de "atrasado", el más viejo primero.
+  const groupRank = (r: DashboardRow): number => {
+    if (r.missing) return 0; // rojo: falta el repo
+    if (r.late) return 1; // rojo: atrasado
+    if (r.activity === "entregado") return 3; // abajo
+    return 2; // medio: trabajando / sin actividad (en gracia)
+  };
   rows.sort((a, b) => {
-    if (a.missing !== b.missing) return a.missing ? -1 : 1;
-    if (a.late !== b.late) return a.late ? -1 : 1;
-    if (a.late && b.late) {
+    const ra = groupRank(a);
+    const rb = groupRank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 1) {
       const ta = a.lastCommitAt ? new Date(a.lastCommitAt).getTime() : 0;
       const tb = b.lastCommitAt ? new Date(b.lastCommitAt).getTime() : 0;
       return ta - tb;
