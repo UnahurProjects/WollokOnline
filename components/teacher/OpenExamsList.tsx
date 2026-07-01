@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 interface ExamSummary {
   slug: string;
@@ -12,10 +12,14 @@ interface ExamSummary {
   createdBy: string | null;
 }
 
-/** Lista los parciales (prioriza los ABIERTOS) leídos de `_control`, con estado de carga. */
+/**
+ * Lista los parciales (prioriza los ABIERTOS) leídos de `_control`. NO carga solo:
+ * el docente toca "Ver parciales abiertos" cuando lo necesita (es lento y no
+ * siempre se quiere ver — sirve sobre todo en momentos de re-organización).
+ */
 export function OpenExamsList() {
   const [exams, setExams] = useState<ExamSummary[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -33,9 +37,30 @@ export function OpenExamsList() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Estado inicial: todavía no se pidió la lista → solo el botón para cargarla.
+  if (exams === null) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Parciales abiertos</h2>
+            <p className="text-sm opacity-60">Puede tardar si hay muchos parciales.</p>
+          </div>
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
+          >
+            <span aria-hidden className={loading ? "animate-spin" : ""}>
+              ↻
+            </span>
+            {loading ? "Cargando…" : "Ver parciales abiertos"}
+          </button>
+        </div>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+      </div>
+    );
+  }
 
   const open = (exams ?? []).filter((e) => !e.closed);
   const closed = (exams ?? []).filter((e) => e.closed);
@@ -65,9 +90,7 @@ export function OpenExamsList() {
         </button>
       </div>
 
-      {loading && exams === null ? (
-        <p className="text-sm opacity-60">Cargando parciales…</p>
-      ) : error ? (
+      {error ? (
         <p className="text-sm text-red-400">{error}</p>
       ) : open.length === 0 ? (
         <p className="text-sm opacity-60">No hay parciales abiertos.</p>
